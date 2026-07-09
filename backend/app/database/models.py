@@ -1,0 +1,60 @@
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from app.database.session import Base
+
+class RequestModel(Base):
+    __tablename__ = "requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    prompt = Column(Text, nullable=False)
+    routed_to = Column(String(50), nullable=False)  # local, remote
+    final_route = Column(String(100), nullable=False)  # LOCAL, REMOTE, LOCAL -> ESCALATED TO REMOTE
+    route_reason = Column(Text, nullable=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    latency_ms = Column(Float, default=0.0)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    cost = Column(Float, default=0.0)
+
+    responses = relationship("ResponseModel", back_populates="request", cascade="all, delete-orphan")
+
+class ResponseModel(Base):
+    __tablename__ = "responses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(Integer, ForeignKey("requests.id", ondelete="CASCADE"), nullable=False)
+    response_text = Column(Text, nullable=False)
+    confidence_score = Column(Float, default=1.0)
+    is_cached = Column(Boolean, default=False)
+    draft_text = Column(Text, nullable=True)
+
+    request = relationship("RequestModel", back_populates="responses")
+
+class CacheModel(Base):
+    __tablename__ = "cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    prompt_hash = Column(String(64), unique=True, index=True, nullable=False)
+    prompt = Column(Text, nullable=False)
+    response_text = Column(Text, nullable=False)
+    model_name = Column(String(100), nullable=False)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    latency_ms = Column(Float, default=0.0)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+class BenchmarkModel(Base):
+    __tablename__ = "benchmarks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    benchmark_name = Column(String(100), nullable=False)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    total_tasks = Column(Integer, default=0)
+    accuracy = Column(Float, default=0.0)
+    remote_tokens = Column(Integer, default=0)
+    local_tokens = Column(Integer, default=0)
+    cost = Column(Float, default=0.0)
+    savings = Column(Float, default=0.0)
+    latency_avg = Column(Float, default=0.0)
+    config_json = Column(Text, nullable=True)  # Store sweep configurations or settings as JSON

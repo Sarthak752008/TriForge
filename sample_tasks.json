@@ -1,0 +1,62 @@
+[
+  {
+    "id": 1,
+    "type": "factual",
+    "task": "What is the capital of Japan?",
+    "expected": ["tokyo"]
+  },
+  {
+    "id": 2,
+    "type": "factual",
+    "task": "Who painted the Mona Lisa?",
+    "expected": ["da vinci", "leonardo"]
+  },
+  {
+    "id": 3,
+    "type": "math",
+    "task": "What is the result of 15 * 6?",
+    "expected": ["90"]
+  },
+  {
+    "id": 4,
+    "type": "math",
+    "task": "What is 257 * 149 - 28?",
+    "expected": ["38265"]
+  },
+  {
+    "id": 5,
+    "type": "code",
+    "task": "Write a python function called 'add_two' that takes two parameters and returns their sum.",
+    "expected": ["def add_two", "return"]
+  },
+  {
+    "id": 6,
+    "type": "code",
+    "task": "What standard python keyword is used to handle exceptions?",
+    "expected": ["try", "except"]
+  },
+  {
+    "id": 7,
+    "type": "summarization",
+    "task": "Provide a 1-sentence summary of the following story: Once upon a time, a young boy named Leo found a golden key in the forest. He searched for days to find what it opened, only to discover it unlocked a chest containing old books of wisdom. Leo spent the rest of his life reading them and became the wisest man in his village.",
+    "expected": ["key", "books", "wisdom"]
+  },
+  {
+    "id": 8,
+    "type": "factual",
+    "task": "Which planet is known as the Red Planet?",
+    "expected": ["mars"]
+  },
+  {
+    "id": 9,
+    "type": "math",
+    "task": "Solve the algebraic equation: 3x + 7 = 22. What is the value of x?",
+    "expected": ["5"]
+  },
+  {
+    "id": 10,
+    "type": "summarization",
+    "task": "Summarize the primary purpose of local LLMs like Ollama in 10 words or less.",
+    "expected": ["local", "run"]
+  }
+]

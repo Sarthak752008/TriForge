@@ -109,25 +109,3 @@ class RemoteFireworksProvider(BaseProvider):
                 "completion_tokens": 0,
                 "done": True
             }
-
-    def verify_draft(self, prompt: str, draft: str, model: str, options: Dict[str, Any] = None) -> Tuple[str, int, int]:
-        verification_prompt = (
-            f"You are an expert verifier. Review the draft answer for the given task.\n"
-            f"If the draft is correct and complete, confirm it. If it is incorrect, incomplete, "
-            f"or has errors, correct it.\n\n"
-            f"Task: {prompt}\n"
-            f"Draft Answer: {draft}\n\n"
-            f"Response (be concise, verify/correct the draft):"
-        )
-        return self.generate(verification_prompt, model, options)
-
-    def verify_draft_stream(self, prompt: str, draft: str, model: str, options: Dict[str, Any] = None) -> Generator[Dict[str, Any], None, None]:
-        verification_prompt = (
-            f"You are an expert verifier. Review the draft answer for the given task.\n"
-            f"If the draft is correct and complete, confirm it. If it is incorrect, incomplete, "
-            f"or has errors, correct it.\n\n"
-            f"Task: {prompt}\n"
-            f"Draft Answer: {draft}\n\n"
-            f"Response (be concise, verify/correct the draft):"
-        )
-        return self.generate_stream(verification_prompt, model, options)

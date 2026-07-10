@@ -89,7 +89,10 @@ class BenchmarkRunner:
                         
                         if sim < threshold or flagged_info["flagged"]:
                             # escalate
-                            ans, r_p, r_c = self.fireworks.verify_draft(prompt, s1, settings.ACTIVE_REMOTE_MODEL)
+                            if not s1.startswith("Error querying local model"):
+                                ans, r_p, r_c = self.fireworks.verify_draft(prompt, s1, settings.ACTIVE_REMOTE_MODEL)
+                            else:
+                                ans, r_p, r_c = self.fireworks.generate(prompt, settings.ACTIVE_REMOTE_MODEL)
                             remote_tokens_spent += (r_p + r_c)
                         else:
                             ans = s1

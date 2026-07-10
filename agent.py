@@ -2,6 +2,7 @@ import os
 import sys
 import requests
 import difflib
+from concurrent.futures import ThreadPoolExecutor
 from router import route
 
 # Simple helper to load environment variables from .env
@@ -119,16 +120,24 @@ def run_agent(task_text: str, consistency_threshold: float = 0.8, silent: bool =
     if selected_route == "local":
         if not silent:
             print("Running local self-consistency check (sampling twice with temperature=0.7)...")
-        # Sample 1
-        sample1, s1_p, s1_c = call_local(task_text, temperature=0.7)
-        local_spent += (s1_p + s1_c)
         
-        # Sample 2
-        sample2, s2_p, s2_c = call_local(task_text, temperature=0.7)
-        local_spent += (s2_p + s2_c)
+        # Sample concurrently to optimize latency
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future1 = executor.submit(call_local, task_text, 0.7)
+            future2 = executor.submit(call_local, task_text, 0.7)
+            
+            sample1, s1_p, s1_c = future1.result()
+            sample2, s2_p, s2_c = future2.result()
+            
+        local_spent += (s1_p + s1_c + s2_p + s2_c)
         
         # Compute string similarity
-        similarity = difflib.SequenceMatcher(None, sample1, sample2).ratio()
+        if sample1.startswith("Error querying local model") or sample2.startswith("Error querying local model"):
+            similarity = 0.0
+        elif sample1 == sample2:
+            similarity = 1.0
+        else:
+            similarity = difflib.SequenceMatcher(None, sample1, sample2).ratio()
         if not silent:
             print(f"Sample 1: {sample1.strip()[:100]}...")
             print(f"Sample 2: {sample2.strip()[:100]}...")
@@ -152,7 +161,10 @@ def run_agent(task_text: str, consistency_threshold: float = 0.8, silent: bool =
                 if not silent:
                     print(f"Hedging detected (found: '{detected_hedges[0]}'). Escalating via verify-draft...")
                 escalated = True
-                answer, r_p, r_c = call_remote_verify(task_text, sample1)
+                if not sample1.startswith("Error querying local model"):
+                    answer, r_p, r_c = call_remote_verify(task_text, sample1)
+                else:
+                    answer, r_p, r_c = call_remote(task_text)
                 remote_spent = r_p + r_c
                 local_saved = 0
             else:
@@ -162,10 +174,13 @@ def run_agent(task_text: str, consistency_threshold: float = 0.8, silent: bool =
                 local_saved = s1_p + s1_c  # The prompt + completion tokens we successfully resolved locally
         else:
             if not silent:
-                print("Agreement is LOW. Escalating via verify-draft...")
+                print("Agreement is LOW. Escalating...")
             escalated = True
-            # We send sample1 as the draft since it's a candidate answer
-            answer, r_p, r_c = call_remote_verify(task_text, sample1)
+            # We send sample1 as the draft since it's a candidate answer (if not an error)
+            if not sample1.startswith("Error querying local model"):
+                answer, r_p, r_c = call_remote_verify(task_text, sample1)
+            else:
+                answer, r_p, r_c = call_remote(task_text)
             remote_spent = r_p + r_c
     else:
         answer, r_p, r_c = call_remote(task_text)

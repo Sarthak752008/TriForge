@@ -4,6 +4,7 @@ from app.config import settings
 class PromptCompressor:
     def __init__(self, ollama_provider: LocalOllamaProvider = None):
         self.ollama = ollama_provider or LocalOllamaProvider()
+        self._cache = {}
 
     def compress(self, prompt: str, max_words: int = 150) -> str:
         """
@@ -13,6 +14,10 @@ class PromptCompressor:
         words = prompt.split()
         if len(words) <= max_words:
             return prompt
+
+        cleaned_prompt = prompt.strip()
+        if cleaned_prompt in self._cache:
+            return self._cache[cleaned_prompt]
 
         system_instruction = (
             "You are a prompt compressor. Simplify the user's input by removing conversational fluff, "
@@ -30,8 +35,14 @@ class PromptCompressor:
             )
             cleaned = compressed.strip()
             
+            if cleaned.startswith("Error querying local model"):
+                return prompt
+                
             # Sanity check: Ensure we actually compressed it and didn't fail
             if cleaned and len(cleaned.split()) < len(words):
+                if len(self._cache) > 500:
+                    self._cache.clear()
+                self._cache[cleaned_prompt] = cleaned
                 return cleaned
         except Exception:
             pass

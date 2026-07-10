@@ -1,5 +1,6 @@
 import difflib
 from typing import Tuple
+from concurrent.futures import ThreadPoolExecutor
 from app.providers.local_ollama import LocalOllamaProvider
 from app.config import settings
 
@@ -16,19 +17,13 @@ class ConsistencyChecker:
         target_model = model or settings.ACTIVE_LOCAL_MODEL
         target_threshold = threshold or settings.DEFAULT_CONSISTENCY_THRESHOLD
 
-        # Sample 1
-        sample1, s1_p, s1_c = self.ollama.generate(
-            prompt, 
-            model=target_model, 
-            options={"temperature": 0.7}
-        )
-
-        # Sample 2
-        sample2, s2_p, s2_c = self.ollama.generate(
-            prompt, 
-            model=target_model, 
-            options={"temperature": 0.7}
-        )
+        # Sample concurrently using ThreadPoolExecutor to optimize latency
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future1 = executor.submit(self.ollama.generate, prompt, target_model, {"temperature": 0.7})
+            future2 = executor.submit(self.ollama.generate, prompt, target_model, {"temperature": 0.7})
+            
+            sample1, s1_p, s1_c = future1.result()
+            sample2, s2_p, s2_c = future2.result()
 
         total_prompt_tokens = s1_p + s2_p
         total_completion_tokens = s1_c + s2_c
@@ -37,8 +32,12 @@ class ConsistencyChecker:
         s1_clean = sample1.strip()
         s2_clean = sample2.strip()
 
-        if not s1_clean or not s2_clean:
+        if not s1_clean or not s2_clean or s1_clean.startswith("Error querying local model") or s2_clean.startswith("Error querying local model"):
             return 0.0, sample1, sample2, total_prompt_tokens, total_completion_tokens
+
+        # Fast exact match shortcut to bypass expensive SequenceMatcher
+        if s1_clean == s2_clean:
+            return 1.0, sample1, sample2, total_prompt_tokens, total_completion_tokens
 
         # Use SequenceMatcher ratio
         similarity = difflib.SequenceMatcher(None, s1_clean, s2_clean).ratio()

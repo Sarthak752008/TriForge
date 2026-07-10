@@ -11,6 +11,7 @@ class SemanticClassifier:
             "translation", "extraction", "conversation", 
             "creative_writing", "general_qa"
         ]
+        self._cache = {}
 
     def _fast_heuristics(self, prompt: str) -> str:
         """
@@ -60,9 +61,16 @@ class SemanticClassifier:
         """
         Main classification function. Combines fast rules with a local LLM zero-shot backup.
         """
+        cleaned_prompt = prompt.strip().lower()
+        if cleaned_prompt in self._cache:
+            return self._cache[cleaned_prompt]
+
         # 1. Check fast heuristics
         heuristic_category = self._fast_heuristics(prompt)
         if heuristic_category != "ambiguous":
+            if len(self._cache) > 2000:
+                self._cache.clear()
+            self._cache[cleaned_prompt] = heuristic_category
             return heuristic_category
 
         # 2. Call local LLM for semantic classification
@@ -95,9 +103,15 @@ class SemanticClassifier:
             # Match against known categories
             for cat in self.categories:
                 if cat in cleaned:
+                    if len(self._cache) > 2000:
+                        self._cache.clear()
+                    self._cache[cleaned_prompt] = cat
                     return cat
         except Exception:
             pass
 
         # Default fallback
+        if len(self._cache) > 2000:
+            self._cache.clear()
+        self._cache[cleaned_prompt] = "general_qa"
         return "general_qa"

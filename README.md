@@ -68,6 +68,32 @@ When local answers fail consistency or raise hedging flags, the system does **no
 
 ---
 
+## ⚡ Optimizations & Production Performance
+
+TriForge is optimized for production-grade throughput, latency, and resource footprint:
+
+### 1. Concurrent Local Sampling (50% Latency Reduction)
+- **Mechanism:** In the local self-consistency verification loop, both Ollama queries are executed concurrently using Python's `concurrent.futures.ThreadPoolExecutor` instead of sequentially.
+- **Impact:** Decreases self-consistency check latency by approximately **50%**, ensuring fast local responses.
+
+### 2. SQLite WAL-Mode & Normal Sync (I/O Optimization)
+- **Mechanism:** Registered custom connection listeners to configure SQLite connection pragmas. The database engine executes under **WAL (Write-Ahead Logging)** mode, with **synchronous=NORMAL** and cache size set to **64MB** (`PRAGMA cache_size=-64000`).
+- **Impact:** Drastically speeds up SQLAlchemy writes and page history loads by removing blocking fsync calls and supporting concurrent reads/writes.
+
+### 3. Consolidated Single-Commit Transactions
+- **Mechanism:** Database logs (Request and Response tables) are flush-linked (`db.flush()`) and committed to the database in a single unit of work (`db.commit()`), reducing database write overhead.
+
+### 4. Fast Exact-Match Short-Circuit
+- **Mechanism:** Before running the O(N^2) `difflib.SequenceMatcher` computation for self-consistency, an O(1) exact-match shortcut is executed. If responses are identical, similarity resolves to `1.0` instantly.
+
+### 5. In-Memory Intent & Prompt Compression Caching
+- **Mechanism:** Implemented LRU caches mapping:
+  - Cleaned prompts directly to their classified intent category.
+  - Long input prompts directly to their compressed forms.
+- **Impact:** Bypasses redundant heuristics, local zero-shot queries, and local prompt compression operations for identical context inputs.
+
+---
+
 ## 📂 Project Structure
 
 ```

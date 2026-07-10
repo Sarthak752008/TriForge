@@ -93,7 +93,7 @@ def chat_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
                 cost=0.0
             )
             db.add(new_request)
-            db.commit()
+            db.flush()
             
             new_response = ResponseModel(
                 request_id=new_request.id,
@@ -155,10 +155,10 @@ def chat_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
             
             # Verify Draft Escalation
             prov = get_remote_provider(remote_model)
-            if hasattr(prov, "verify_draft"):
+            if hasattr(prov, "verify_draft") and not s1.startswith("Error querying local model"):
                 ans, r_p, r_c = prov.verify_draft(req.prompt, s1, remote_model)
             else:
-                # If provider doesn't support verify-draft, run normal remote fallback
+                # If provider doesn't support verify-draft or draft is an error, run normal remote fallback
                 ans, r_p, r_c = prov.generate(req.prompt, remote_model)
             p_tok += r_p
             c_tok += r_c
@@ -197,7 +197,7 @@ def chat_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
         cost=cost
     )
     db.add(new_request)
-    db.commit()
+    db.flush()
 
     new_response = ResponseModel(
         request_id=new_request.id,
@@ -275,9 +275,10 @@ async def chat_stream_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
                 await asyncio.sleep(0.01)
 
                 prov = get_remote_provider(remote_model)
-                if hasattr(prov, "verify_draft_stream"):
+                if hasattr(prov, "verify_draft_stream") and not s1.startswith("Error querying local model"):
                     # Stream remote verify
                     stream = prov.verify_draft_stream(req.prompt, s1, remote_model)
+                    chunk = {}
                     for chunk in stream:
                         delta = chunk.get("text", "")
                         ans_accumulator.append(delta)
@@ -289,6 +290,7 @@ async def chat_stream_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
                 else:
                     # fallback normal stream
                     stream = prov.generate_stream(req.prompt, remote_model)
+                    chunk = {}
                     for chunk in stream:
                         delta = chunk.get("text", "")
                         ans_accumulator.append(delta)
@@ -315,6 +317,7 @@ async def chat_stream_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
             stream = prov.generate_stream(prompt_to_send, remote_model)
             
             # Iterate stream
+            chunk = {}
             for chunk in stream:
                 delta = chunk.get("text", "")
                 ans_accumulator.append(delta)
@@ -343,7 +346,7 @@ async def chat_stream_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
             cost=cost
         )
         db.add(db_req)
-        db.commit()
+        db.flush()
 
         db_resp = ResponseModel(
             request_id=db_req.id,

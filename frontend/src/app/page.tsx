@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "@/lib/api";
 import { 
   Zap, 
   TrendingUp, 
@@ -49,12 +50,12 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://localhost:8000/api/analytics");
+      const res = await fetch(`${API_BASE_URL}/api/analytics`);
       if (!res.ok) throw new Error("Failed to fetch analytics statistics.");
       const json = await res.json();
       setData(json);
     } catch (err: any) {
-      setError(err.message || "Failed to reach backend API. Make sure FastAPI server is running on http://localhost:8000.");
+      setError(err.message || "Failed to reach backend API. Make sure FastAPI server is running.");
     } finally {
       setLoading(false);
     }

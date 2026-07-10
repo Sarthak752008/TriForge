@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "@/lib/api";
 import { 
   Settings, 
   RefreshCw, 
@@ -45,7 +46,7 @@ export default function SettingsPage() {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const res = await fetch("http://localhost:8000/api/settings");
+      const res = await fetch(`${API_BASE_URL}/api/settings`);
       if (!res.ok) throw new Error("Failed to fetch settings from API.");
       const json = await res.json();
       setFormData(json);
@@ -66,7 +67,7 @@ export default function SettingsPage() {
     setSuccessMsg(null);
     setErrorMsg(null);
     try {
-      const res = await fetch("http://localhost:8000/api/settings", {
+      const res = await fetch(`${API_BASE_URL}/api/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData)

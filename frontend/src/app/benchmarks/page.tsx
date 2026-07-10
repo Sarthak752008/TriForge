@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "@/lib/api";
 import { 
   Swords, 
   RefreshCw, 
@@ -53,7 +54,7 @@ export default function BenchmarksPage() {
   const fetchBenchmarks = async (selectFirst = false) => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/api/benchmarks");
+      const res = await fetch(`${API_BASE_URL}/api/benchmarks`);
       if (!res.ok) throw new Error("Failed to fetch benchmark runs.");
       const json = await res.json();
       setHistory(json);
@@ -75,7 +76,7 @@ export default function BenchmarksPage() {
     setRunning(true);
     setError(null);
     try {
-      const res = await fetch("http://localhost:8000/api/benchmark", {
+      const res = await fetch(`${API_BASE_URL}/api/benchmark`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

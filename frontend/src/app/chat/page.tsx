@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { API_BASE_URL } from "@/lib/api";
 import { 
   Send, 
   Bot, 
@@ -105,7 +106,7 @@ export default function ChatPage() {
     setMessages(prev => [...prev, userMsg, assistantMsg]);
 
     try {
-      const response = await fetch("http://localhost:8000/api/chat/stream", {
+      const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

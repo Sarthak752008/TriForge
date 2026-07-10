@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "@/lib/api";
 import { 
   BarChart3, 
   RefreshCw, 
@@ -40,7 +41,7 @@ export default function AnalyticsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://localhost:8000/api/history?limit=30");
+      const res = await fetch(`${API_BASE_URL}/api/history?limit=30`);
       if (!res.ok) throw new Error("Failed to fetch request history.");
       const json = await res.json();
       setHistory(json);

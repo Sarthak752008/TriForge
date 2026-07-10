@@ -3,7 +3,7 @@ import os
 import time
 from sqlalchemy.orm import Session
 from app.database.models import BenchmarkModel
-from app.providers.local_ollama import LocalOllamaProvider
+from app.providers.groq_provider import GroqProvider
 from app.providers.remote_fireworks import RemoteFireworksProvider
 from app.router.routing_engine import RoutingEngine
 from app.evaluation.consistency import ConsistencyChecker
@@ -13,10 +13,10 @@ from app.config import settings
 class BenchmarkRunner:
     def __init__(self, db: Session):
         self.db = db
-        self.ollama = LocalOllamaProvider()
+        self.groq_local = GroqProvider()  # Free Groq API replaces Ollama
         self.fireworks = RemoteFireworksProvider()
         self.router = RoutingEngine()
-        self.consistency = ConsistencyChecker(self.ollama)
+        self.consistency = ConsistencyChecker(self.groq_local)
         self.hallucination = HallucinationDetector()
 
     def _load_tasks(self) -> list:
@@ -70,7 +70,7 @@ class BenchmarkRunner:
                 p_tok, c_tok = 0, 0
 
                 if mode == "always_local":
-                    ans, p_tok, c_tok = self.ollama.generate(prompt, settings.ACTIVE_LOCAL_MODEL)
+                    ans, p_tok, c_tok = self.groq_local.generate(prompt, settings.ACTIVE_LOCAL_MODEL)
                     local_tokens_spent += (p_tok + c_tok)
 
                 elif mode == "always_remote":
@@ -89,7 +89,7 @@ class BenchmarkRunner:
                         
                         if sim < threshold or flagged_info["flagged"]:
                             # escalate
-                            if not s1.startswith("Error querying local model"):
+                            if not s1.startswith("Error querying Groq model"):
                                 ans, r_p, r_c = self.fireworks.verify_draft(prompt, s1, settings.ACTIVE_REMOTE_MODEL)
                             else:
                                 ans, r_p, r_c = self.fireworks.generate(prompt, settings.ACTIVE_REMOTE_MODEL)

@@ -1,20 +1,28 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from sqlalchemy.event import listens_for
 from app.config import settings
 
-# For SQLite, we disable thread-check warning to allow multi-threaded access in FastAPI
-connect_args = {}
-if settings.DATABASE_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+is_sqlite = settings.DATABASE_URL.startswith("sqlite")
 
-engine = create_engine(
-    settings.DATABASE_URL, connect_args=connect_args
-)
+# SQLite needs check_same_thread=False for FastAPI multi-threading
+# PostgreSQL (Neon) needs pool_pre_ping=True for serverless connection handling
+if is_sqlite:
+    engine = create_engine(
+        settings.DATABASE_URL,
+        connect_args={"check_same_thread": False},
+    )
+else:
+    engine = create_engine(
+        settings.DATABASE_URL,
+        pool_pre_ping=True,       # Reconnect if connection dropped (serverless)
+        pool_size=5,
+        max_overflow=10,
+    )
 
 @listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
-    if settings.DATABASE_URL.startswith("sqlite"):
+    if is_sqlite:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")

@@ -14,7 +14,7 @@ from app.database.schemas import (
 )
 from app.config import settings
 from app.router.routing_engine import RoutingEngine
-from app.providers.local_ollama import LocalOllamaProvider
+from app.providers.groq_provider import GroqProvider
 from app.providers.remote_fireworks import RemoteFireworksProvider
 from app.providers.openai_provider import OpenAIProvider
 from app.providers.anthropic_provider import AnthropicProvider
@@ -28,15 +28,15 @@ from app.benchmark.runner import BenchmarkRunner
 router = APIRouter(prefix="/api")
 
 # Instantiate Core Engines
-ollama = LocalOllamaProvider()
+groq_local = GroqProvider()         # "Local" model — free Groq Llama 3.1 8B
 fireworks = RemoteFireworksProvider()
 openai_prov = OpenAIProvider()
-anthropic_prov = AnthropicProvider()
+anthropicprov = AnthropicProvider()
 
 routing_engine = RoutingEngine()
-consistency_checker = ConsistencyChecker(ollama)
+consistency_checker = ConsistencyChecker(groq_local)
 hallucination_detector = HallucinationDetector()
-prompt_compressor = PromptCompressor(ollama)
+prompt_compressor = PromptCompressor(groq_local)
 smart_cache = SmartCache()
 analytics_engine = AnalyticsEngine()
 
@@ -44,12 +44,16 @@ analytics_engine = AnalyticsEngine()
 def get_remote_provider(model: str):
     """
     Selects provider based on remote model prefix/config.
+    Falls back to Groq if no provider-specific key is set.
     """
     if "gpt" in model.lower() or "text-davinci" in model.lower():
         return openai_prov
     elif "claude" in model.lower():
-        return anthropic_prov
-    return fireworks  # Default Fireworks
+        return anthropicprov
+    elif "fireworks" in model.lower() or "accounts/fireworks" in model.lower():
+        return fireworks
+    # Default: use Groq as remote provider (works with just GROQ_API_KEY)
+    return groq_local
 
 @router.post("/router", response_model=RouterExplanationResponse)
 def explain_route(req: RouterExplanationRequest):
@@ -155,7 +159,7 @@ def chat_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
             
             # Verify Draft Escalation
             prov = get_remote_provider(remote_model)
-            if hasattr(prov, "verify_draft") and not s1.startswith("Error querying local model"):
+            if hasattr(prov, "verify_draft") and not s1.startswith("Error querying Groq model"):
                 ans, r_p, r_c = prov.verify_draft(req.prompt, s1, remote_model)
             else:
                 # If provider doesn't support verify-draft or draft is an error, run normal remote fallback
@@ -275,7 +279,7 @@ async def chat_stream_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
                 await asyncio.sleep(0.01)
 
                 prov = get_remote_provider(remote_model)
-                if hasattr(prov, "verify_draft_stream") and not s1.startswith("Error querying local model"):
+                if hasattr(prov, "verify_draft_stream") and not s1.startswith("Error querying Groq model"):
                     # Stream remote verify
                     stream = prov.verify_draft_stream(req.prompt, s1, remote_model)
                     chunk = {}
@@ -425,14 +429,15 @@ def get_supported_models():
     """
     return {
         "local": [
-            {"id": "qwen2.5:3b-instruct", "name": "Qwen 2.5 3B (Recommended)"},
-            {"id": "gemma2:2b", "name": "Gemma 2 2B"},
-            {"id": "phi3:3.8b", "name": "Phi-3 3.8B"},
-            {"id": "tinyllama:1.1b", "name": "TinyLlama 1.1B"}
+            {"id": "llama-3.1-8b-instant", "name": "Llama 3.1 8B Instant (Groq — Recommended)"},
+            {"id": "llama3-8b-8192", "name": "Llama 3 8B (Groq)"},
+            {"id": "gemma2-9b-it", "name": "Gemma 2 9B (Groq)"},
+            {"id": "mixtral-8x7b-32768", "name": "Mixtral 8x7B (Groq)"}
         ],
         "remote": [
-            {"id": "accounts/fireworks/models/llama-v3p1-8b-instruct", "name": "Llama 3.1 8B (Fireworks)"},
+            {"id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B Versatile (Groq — Recommended)"},
             {"id": "accounts/fireworks/models/llama-v3p1-70b-instruct", "name": "Llama 3.1 70B (Fireworks)"},
+            {"id": "accounts/fireworks/models/llama-v3p1-8b-instruct", "name": "Llama 3.1 8B (Fireworks)"},
             {"id": "gpt-4o-mini", "name": "GPT-4o Mini (OpenAI)"},
             {"id": "gpt-4o", "name": "GPT-4o (OpenAI)"},
             {"id": "claude-3-5-sonnet-20240620", "name": "Claude 3.5 Sonnet (Anthropic)"}

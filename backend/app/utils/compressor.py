@@ -1,9 +1,9 @@
-from app.providers.local_ollama import LocalOllamaProvider
+from app.providers.groq_provider import GroqProvider
 from app.config import settings
 
 class PromptCompressor:
-    def __init__(self, ollama_provider: LocalOllamaProvider = None):
-        self.ollama = ollama_provider or LocalOllamaProvider()
+    def __init__(self, local_provider: GroqProvider = None):
+        self.local_provider = local_provider or GroqProvider()
         self._cache = {}
 
     def compress(self, prompt: str, max_words: int = 150) -> str:
@@ -28,14 +28,14 @@ class PromptCompressor:
         compression_prompt = f"{system_instruction}\n\nInput Prompt:\n{prompt}\n\nCompressed Prompt:"
         
         try:
-            compressed, _, _ = self.ollama.generate(
+            compressed, _, _ = self.local_provider.generate(
                 prompt=compression_prompt,
                 model=settings.ACTIVE_LOCAL_MODEL,
                 options={"temperature": 0.1}
             )
             cleaned = compressed.strip()
             
-            if cleaned.startswith("Error querying local model"):
+            if cleaned.startswith("Error querying Groq model"):
                 return prompt
                 
             # Sanity check: Ensure we actually compressed it and didn't fail

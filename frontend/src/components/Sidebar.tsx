@@ -75,7 +75,7 @@ export default function Sidebar() {
           <span className="text-xs font-semibold text-emerald-400">ONLINE</span>
         </div>
         <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">
-          Local model via Ollama & remote Fireworks API endpoints linked.
+          Groq (local) & remote API endpoints linked.
         </p>
       </div>
     </aside>

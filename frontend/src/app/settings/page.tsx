@@ -41,15 +41,27 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [models, setModels] = useState<{ local: { id: string; name: string }[]; remote: { id: string; name: string }[] }>({
+    local: [],
+    remote: []
+  });
 
-  const fetchSettings = async () => {
+  const fetchSettingsAndModels = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/settings`);
-      if (!res.ok) throw new Error("Failed to fetch settings from API.");
-      const json = await res.json();
-      setFormData(json);
+      const [settingsRes, modelsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/settings`),
+        fetch(`${API_BASE_URL}/api/models`)
+      ]);
+      if (!settingsRes.ok) throw new Error("Failed to fetch settings from API.");
+      if (!modelsRes.ok) throw new Error("Failed to fetch supported models from API.");
+      
+      const settingsData = await settingsRes.json();
+      const modelsData = await modelsRes.json();
+      
+      setFormData(settingsData);
+      setModels(modelsData);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to contact backend API.");
     } finally {
@@ -58,7 +70,7 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    fetchSettings();
+    fetchSettingsAndModels();
   }, []);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -160,10 +172,9 @@ export default function SettingsPage() {
                 onChange={(e) => setFormData({ ...formData, active_local_model: e.target.value })}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white"
               >
-                <option value="qwen2.5:3b-instruct">Qwen 2.5 3B (Instruct)</option>
-                <option value="gemma2:2b">Gemma 2 2B</option>
-                <option value="phi3:3.8b">Phi-3 3.8B</option>
-                <option value="tinyllama:1.1b">TinyLlama 1.1B</option>
+                {models.local.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
               </select>
             </div>
 
@@ -174,10 +185,9 @@ export default function SettingsPage() {
                 onChange={(e) => setFormData({ ...formData, active_remote_model: e.target.value })}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white"
               >
-                <option value="accounts/fireworks/models/llama-v3p1-8b-instruct">Llama 3.1 8B (Fireworks)</option>
-                <option value="accounts/fireworks/models/llama-v3p1-70b-instruct">Llama 3.1 70B (Fireworks)</option>
-                <option value="gpt-4o-mini">GPT-4o Mini (OpenAI)</option>
-                <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet (Anthropic)</option>
+                {models.remote.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
               </select>
             </div>
 

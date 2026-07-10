@@ -43,10 +43,14 @@ export default function ChatPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Quick Override Options
-  const [localModel, setLocalModel] = useState("qwen2.5:3b-instruct");
-  const [remoteModel, setRemoteModel] = useState("accounts/fireworks/models/llama-v3p1-8b-instruct");
+  const [localModel, setLocalModel] = useState("");
+  const [remoteModel, setRemoteModel] = useState("");
   const [threshold, setThreshold] = useState(0.8);
   const [showOptions, setShowOptions] = useState(false);
+  const [models, setModels] = useState<{ local: { id: string; name: string }[]; remote: { id: string; name: string }[] }>({
+    local: [],
+    remote: []
+  });
 
   // Inspector Sidebar
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
@@ -56,6 +60,30 @@ export default function ChatPage() {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  useEffect(() => {
+    // Fetch default settings and models list from backend
+    const initialize = async () => {
+      try {
+        const [settingsRes, modelsRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/settings`),
+          fetch(`${API_BASE_URL}/api/models`)
+        ]);
+        if (settingsRes.ok && modelsRes.ok) {
+          const settingsData = await settingsRes.json();
+          const modelsData = await modelsRes.json();
+          
+          setModels(modelsData);
+          setLocalModel(settingsData.active_local_model);
+          setRemoteModel(settingsData.active_remote_model);
+          setThreshold(settingsData.default_threshold);
+        }
+      } catch (e) {
+        console.error("Failed to load backend configurations", e);
+      }
+    };
+    initialize();
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
@@ -263,10 +291,9 @@ export default function ChatPage() {
                 onChange={(e) => setLocalModel(e.target.value)}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-xs text-white"
               >
-                <option value="qwen2.5:3b-instruct">Qwen 2.5 3B (Instruct)</option>
-                <option value="gemma2:2b">Gemma 2 2B</option>
-                <option value="phi3:3.8b">Phi-3 3.8B</option>
-                <option value="tinyllama:1.1b">TinyLlama 1.1B</option>
+                {models.local.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -276,9 +303,9 @@ export default function ChatPage() {
                 onChange={(e) => setRemoteModel(e.target.value)}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-xs text-white"
               >
-                <option value="accounts/fireworks/models/llama-v3p1-8b-instruct">Llama 3.1 8B (Fireworks)</option>
-                <option value="gpt-4o-mini">GPT-4o Mini (OpenAI)</option>
-                <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet (Anthropic)</option>
+                {models.remote.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
               </select>
             </div>
             <div>

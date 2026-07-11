@@ -6,7 +6,7 @@ from app.config import settings
 
 class RemoteFireworksProvider(BaseProvider):
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or settings.FIREWORKS_API_KEY
+        self.api_key = api_key if api_key is not None else settings.FIREWORKS_API_KEY
         self.base_url = "https://api.fireworks.ai/inference/v1/chat/completions"
 
     def _get_headers(self, key: str = None) -> Dict[str, str]:

@@ -64,6 +64,7 @@ def test_remote_model():
         
     except requests.exceptions.HTTPError as he:
         print(f"\n[ERROR] HTTP Error: {he}")
+        print(f"Response Body: {response.text}")
         if response.status_code == 401:
             print("Please check if your FIREWORKS_API_KEY is valid.")
     except Exception as e:

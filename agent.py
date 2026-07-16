@@ -21,7 +21,7 @@ import hashlib
 import requests
 import difflib
 from concurrent.futures import ThreadPoolExecutor
-from router import route
+from router import route, _classify
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Configuration
@@ -230,72 +230,81 @@ def run_agent(
     # ── LAYER 3: Execute routing decision ─────────────────────────────────────
 
     if selected_route == "local":
-        # ─── LOCAL PATH: 0 Fireworks tokens ─────────────────────────────────
-        if not silent:
-            print("Running local self-consistency check (2× concurrent Ollama samples)...")
-
-        # Two concurrent samples at temperature 0.7 for diversity
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            f1 = executor.submit(call_local, task_text, 0.7)
-            f2 = executor.submit(call_local, task_text, 0.7)
-            sample1, s1_p, s1_c = f1.result()
-            sample2, s2_p, s2_c = f2.result()
-
-        local_spent += s1_p + s1_c + s2_p + s2_c
-
-        # ─── Similarity check ────────────────────────────────────────────────
-        err1 = sample1.startswith("Error querying local model")
-        err2 = sample2.startswith("Error querying local model")
-        is_error = err1 or err2
-
-        if is_error:
-            similarity = 0.0
-        elif sample1.strip() == sample2.strip():
-            similarity = 1.0          # Fast exact-match shortcut (O(1))
-        else:
-            similarity = difflib.SequenceMatcher(
-                None, sample1.strip(), sample2.strip()
-            ).ratio()
-
-        if not silent:
-            print(f"Sample 1 (truncated): {sample1.strip()[:80]}...")
-            print(f"Sample 2 (truncated): {sample2.strip()[:80]}...")
-            print(f"Agreement Similarity : {similarity:.2f}  (Threshold: {consistency_threshold})")
-
-        if similarity >= consistency_threshold and not is_error:
-            # ─── Hedging / uncertainty scan ──────────────────────────────────
-            hedging_phrases = [
-                "i'm not sure", "i am not sure", "not sure if", "might be",
-                "i don't know", "i do not know", "cannot answer", "unable to answer",
-                "i apologize", "as an ai", "cannot verify", "my knowledge cutoff",
-                "not have access", "cannot guarantee",
-            ]
-            detected_hedges = [p for p in hedging_phrases if p in sample1.lower()]
-
-            if not detected_hedges:
-                # ✅ HIGH confidence local answer — 0 Fireworks tokens used
-                if not silent:
-                    print("HIGH confidence. Trusting local output. (0 Fireworks tokens)")
-                answer      = sample1
-                local_saved = s1_p + s1_c
-            else:
-                # Hedging found → escalate via minimal verify-draft (cheapest tier)
-                if not silent:
-                    print(f"Hedging detected: {detected_hedges}. Escalating via verify-draft...")
-                escalated = True
-                answer, r_p, r_c = call_fireworks_verify(task_text, sample1, "tier1")
-                remote_spent = r_p + r_c
-        else:
-            # Low consistency → escalate via minimal verify-draft
+        category = _classify(task_text)
+        if category == "conversation":
             if not silent:
-                print(f"LOW similarity ({similarity:.2f}). Escalating via verify-draft (tier1)...")
-            escalated = True
-            if not is_error:
-                answer, r_p, r_c = call_fireworks_verify(task_text, sample1, "tier1")
+                print("Conversation/Greeting detected. Trusting local output directly. (0 Fireworks tokens)")
+            sample1, s1_p, s1_c = call_local(task_text, 0.7)
+            answer = sample1
+            local_spent = s1_p + s1_c
+            local_saved = s1_p + s1_c
+        else:
+            # ─── LOCAL PATH: 0 Fireworks tokens ─────────────────────────────────
+            if not silent:
+                print("Running local self-consistency check (2× concurrent Ollama samples)...")
+
+            # Two concurrent samples at temperature 0.7 for diversity
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                f1 = executor.submit(call_local, task_text, 0.7)
+                f2 = executor.submit(call_local, task_text, 0.7)
+                sample1, s1_p, s1_c = f1.result()
+                sample2, s2_p, s2_c = f2.result()
+
+            local_spent += s1_p + s1_c + s2_p + s2_c
+
+            # ─── Similarity check ────────────────────────────────────────────────
+            err1 = sample1.startswith("Error querying local model")
+            err2 = sample2.startswith("Error querying local model")
+            is_error = err1 or err2
+
+            if is_error:
+                similarity = 0.0
+            elif sample1.strip() == sample2.strip():
+                similarity = 1.0          # Fast exact-match shortcut (O(1))
             else:
-                # Local model was completely down — fall back to full Fireworks call
-                answer, r_p, r_c = call_fireworks(task_text, "tier1")
-            remote_spent = r_p + r_c
+                similarity = difflib.SequenceMatcher(
+                    None, sample1.strip(), sample2.strip()
+                ).ratio()
+
+            if not silent:
+                print(f"Sample 1 (truncated): {sample1.strip()[:80]}...")
+                print(f"Sample 2 (truncated): {sample2.strip()[:80]}...")
+                print(f"Agreement Similarity : {similarity:.2f}  (Threshold: {consistency_threshold})")
+
+            if similarity >= consistency_threshold and not is_error:
+                # ─── Hedging / uncertainty scan ──────────────────────────────────
+                hedging_phrases = [
+                    "i'm not sure", "i am not sure", "not sure if", "might be",
+                    "i don't know", "i do not know", "cannot answer", "unable to answer",
+                    "i apologize", "as an ai", "cannot verify", "my knowledge cutoff",
+                    "not have access", "cannot guarantee",
+                ]
+                detected_hedges = [p for p in hedging_phrases if p in sample1.lower()]
+
+                if not detected_hedges:
+                    # ✅ HIGH confidence local answer — 0 Fireworks tokens used
+                    if not silent:
+                        print("HIGH confidence. Trusting local output. (0 Fireworks tokens)")
+                    answer      = sample1
+                    local_saved = s1_p + s1_c
+                else:
+                    # Hedging found → escalate via minimal verify-draft (cheapest tier)
+                    if not silent:
+                        print(f"Hedging detected: {detected_hedges}. Escalating via verify-draft...")
+                    escalated = True
+                    answer, r_p, r_c = call_fireworks_verify(task_text, sample1, "tier1")
+                    remote_spent = r_p + r_c
+            else:
+                # Low consistency → escalate via minimal verify-draft
+                if not silent:
+                    print(f"LOW similarity ({similarity:.2f}). Escalating via verify-draft (tier1)...")
+                escalated = True
+                if not is_error:
+                    answer, r_p, r_c = call_fireworks_verify(task_text, sample1, "tier1")
+                else:
+                    # Local model was completely down — fall back to full Fireworks call
+                    answer, r_p, r_c = call_fireworks(task_text, "tier1")
+                remote_spent = r_p + r_c
 
     else:
         # ─── REMOTE PATH: Fireworks API ─────────────────────────────────────

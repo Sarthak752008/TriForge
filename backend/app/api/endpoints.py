@@ -4,7 +4,8 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List
+import os
+from typing import List, Optional
 
 from app.database.session import get_db
 from app.database.models import RequestModel, ResponseModel, BenchmarkModel
@@ -41,6 +42,49 @@ smart_cache = SmartCache()
 analytics_engine = AnalyticsEngine()
 
 # Helpers
+def resolve_remote_model(model: str) -> str:
+    """
+    Ensures that if the selected model requires an API key that is not configured
+    (or is a dummy placeholder), we fallback to the default Groq model.
+    """
+    model_lower = model.lower()
+    
+    # 1. Fireworks AI Check
+    if "fireworks" in model_lower or "accounts/fireworks" in model_lower:
+        is_missing = (
+            not settings.FIREWORKS_API_KEY 
+            or settings.FIREWORKS_API_KEY.startswith("key_") 
+            or "placeholder" in settings.FIREWORKS_API_KEY.lower()
+            or "your_" in settings.FIREWORKS_API_KEY.lower()
+            or settings.FIREWORKS_API_KEY.strip() == ""
+        )
+        if is_missing:
+            return "llama-3.3-70b-versatile"
+            
+    # 2. OpenAI Check
+    elif "gpt" in model_lower or "text-davinci" in model_lower:
+        is_missing = (
+            not settings.OPENAI_API_KEY 
+            or "placeholder" in settings.OPENAI_API_KEY.lower()
+            or "your_" in settings.OPENAI_API_KEY.lower()
+            or settings.OPENAI_API_KEY.strip() == ""
+        )
+        if is_missing:
+            return "llama-3.3-70b-versatile"
+            
+    # 3. Anthropic Check
+    elif "claude" in model_lower:
+        is_missing = (
+            not settings.ANTHROPIC_API_KEY 
+            or "placeholder" in settings.ANTHROPIC_API_KEY.lower()
+            or "your_" in settings.ANTHROPIC_API_KEY.lower()
+            or settings.ANTHROPIC_API_KEY.strip() == ""
+        )
+        if is_missing:
+            return "llama-3.3-70b-versatile"
+            
+    return model
+
 def get_remote_provider(model: str):
     """
     Selects provider based on remote model prefix/config.
@@ -128,6 +172,7 @@ def chat_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
     
     local_model = req.local_model or settings.ACTIVE_LOCAL_MODEL
     remote_model = req.remote_model or settings.ACTIVE_REMOTE_MODEL
+    remote_model = resolve_remote_model(remote_model)
     threshold = req.threshold or settings.DEFAULT_CONSISTENCY_THRESHOLD
 
     final_route = route_name.upper()
@@ -139,36 +184,44 @@ def chat_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
     draft = None
 
     if route_name == "local":
-        # Run self-consistency
-        sim, s1, s2, total_p, total_c = consistency_checker.check_consistency(req.prompt, local_model, threshold)
-        p_tok += total_p
-        c_tok += total_c
-        confidence = sim
-        draft = s1
-
-        # Run hallucination check
-        flagged_info = hallucination_detector.check_hallucination_signals(s1)
-
-        if sim < threshold or flagged_info["flagged"]:
-            escalated = True
-            final_route = "LOCAL -> ESCALATED TO REMOTE"
-            route_reason = (
-                f"Escalated because consistency similarity ({sim:.2f}) was below threshold ({threshold:.2f}) "
-                f"or hedging/hallucination flags were raised: {flagged_info['reasons']}"
-            )
-            
-            # Verify Draft Escalation
-            prov = get_remote_provider(remote_model)
-            if hasattr(prov, "verify_draft") and not s1.startswith("Error querying Groq model"):
-                ans, r_p, r_c = prov.verify_draft(req.prompt, s1, remote_model)
-            else:
-                # If provider doesn't support verify-draft or draft is an error, run normal remote fallback
-                ans, r_p, r_c = prov.generate(req.prompt, remote_model)
-            p_tok += r_p
-            c_tok += r_c
-        else:
-            # Trusted local response
+        category = estimates["category"]
+        if category == "conversation":
+            s1, total_p, total_c = consistency_checker.local_provider.generate(req.prompt, local_model, {"temperature": 0.7})
             ans = s1
+            p_tok += total_p
+            c_tok += total_c
+            confidence = 1.0
+        else:
+            # Run self-consistency
+            sim, s1, s2, total_p, total_c = consistency_checker.check_consistency(req.prompt, local_model, threshold)
+            p_tok += total_p
+            c_tok += total_c
+            confidence = sim
+            draft = s1
+
+            # Run hallucination check
+            flagged_info = hallucination_detector.check_hallucination_signals(s1)
+
+            if sim < threshold or flagged_info["flagged"]:
+                escalated = True
+                final_route = "LOCAL -> ESCALATED TO REMOTE"
+                route_reason = (
+                    f"Escalated because consistency similarity ({sim:.2f}) was below threshold ({threshold:.2f}) "
+                    f"or hedging/hallucination flags were raised: {flagged_info['reasons']}"
+                )
+                
+                # Verify Draft Escalation
+                prov = get_remote_provider(remote_model)
+                if hasattr(prov, "verify_draft") and not s1.startswith("Error querying Groq model"):
+                    ans, r_p, r_c = prov.verify_draft(req.prompt, s1, remote_model)
+                else:
+                    # If provider doesn't support verify-draft or draft is an error, run normal remote fallback
+                    ans, r_p, r_c = prov.generate(req.prompt, remote_model)
+                p_tok += r_p
+                c_tok += r_c
+            else:
+                # Trusted local response
+                ans = s1
     else:
         # Route Remote directly
         prompt_to_send = req.prompt
@@ -242,6 +295,7 @@ async def chat_stream_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
     route_name, reason, estimates = routing_engine.route(req.prompt)
     local_model = req.local_model or settings.ACTIVE_LOCAL_MODEL
     remote_model = req.remote_model or settings.ACTIVE_REMOTE_MODEL
+    remote_model = resolve_remote_model(remote_model)
     threshold = req.threshold or settings.DEFAULT_CONSISTENCY_THRESHOLD
 
     async def stream_generator():
@@ -259,57 +313,72 @@ async def chat_stream_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
         await asyncio.sleep(0.01)
 
         if route_name == "local":
-            # Run Self-Consistency Check (Synchronously as we need verification)
-            sim, s1, s2, total_p, total_c = consistency_checker.check_consistency(req.prompt, local_model, threshold)
-            p_tok += total_p
-            c_tok += total_c
-            draft_text = s1
-            confidence = sim
-
-            flagged_info = hallucination_detector.check_hallucination_signals(s1)
-
-            if sim < threshold or flagged_info["flagged"]:
-                escalated = True
-                final_route = "LOCAL -> ESCALATED TO REMOTE"
-                route_reason = (
-                    f"Escalated: Similarity ({sim:.2f}) < threshold ({threshold:.2f}) "
-                    f"or flagged: {flagged_info['reasons']}"
-                )
-                yield f"data: {json.dumps({'event': 'escalation', 'reason': route_reason, 'draft': s1})}\n\n"
+            category = estimates["category"]
+            if category == "conversation":
+                yield f"data: {json.dumps({'event': 'status', 'text': 'Streaming local response...'})}\n\n"
                 await asyncio.sleep(0.01)
-
-                prov = get_remote_provider(remote_model)
-                if hasattr(prov, "verify_draft_stream") and not s1.startswith("Error querying Groq model"):
-                    # Stream remote verify
-                    stream = prov.verify_draft_stream(req.prompt, s1, remote_model)
-                    chunk = {}
-                    for chunk in stream:
-                        delta = chunk.get("text", "")
-                        ans_accumulator.append(delta)
-                        yield f"data: {json.dumps({'event': 'content', 'text': delta})}\n\n"
-                        await asyncio.sleep(0.005)
-                    # final tokens
-                    p_tok += chunk.get("prompt_tokens", 0)
-                    c_tok += chunk.get("completion_tokens", 0)
-                else:
-                    # fallback normal stream
-                    stream = prov.generate_stream(req.prompt, remote_model)
-                    chunk = {}
-                    for chunk in stream:
-                        delta = chunk.get("text", "")
-                        ans_accumulator.append(delta)
-                        yield f"data: {json.dumps({'event': 'content', 'text': delta})}\n\n"
-                        await asyncio.sleep(0.005)
-                    p_tok += chunk.get("prompt_tokens", 0)
-                    c_tok += chunk.get("completion_tokens", 0)
+                prov = consistency_checker.local_provider
+                stream = prov.generate_stream(req.prompt, local_model, {"temperature": 0.7})
+                chunk = {}
+                for chunk in stream:
+                    delta = chunk.get("text", "")
+                    ans_accumulator.append(delta)
+                    yield f"data: {json.dumps({'event': 'content', 'text': delta})}\n\n"
+                    await asyncio.sleep(0.005)
+                p_tok += chunk.get("prompt_tokens", 0)
+                c_tok += chunk.get("completion_tokens", 0)
             else:
-                # Simulating local stream of trusted response to UI
-                yield f"data: {json.dumps({'event': 'status', 'text': 'Streaming trusted local response...'})}\n\n"
-                await asyncio.sleep(0.01)
-                for word in s1.split(" "):
-                    ans_accumulator.append(word + " ")
-                    yield f"data: {json.dumps({'event': 'content', 'text': word + ' '})}\n\n"
-                    await asyncio.sleep(0.02)  # Simulate typing
+                # Run Self-Consistency Check (Synchronously as we need verification)
+                sim, s1, s2, total_p, total_c = consistency_checker.check_consistency(req.prompt, local_model, threshold)
+                p_tok += total_p
+                c_tok += total_c
+                draft_text = s1
+                confidence = sim
+
+                flagged_info = hallucination_detector.check_hallucination_signals(s1)
+
+                if sim < threshold or flagged_info["flagged"]:
+                    escalated = True
+                    final_route = "LOCAL -> ESCALATED TO REMOTE"
+                    route_reason = (
+                        f"Escalated: Similarity ({sim:.2f}) < threshold ({threshold:.2f}) "
+                        f"or flagged: {flagged_info['reasons']}"
+                    )
+                    yield f"data: {json.dumps({'event': 'escalation', 'reason': route_reason, 'draft': s1})}\n\n"
+                    await asyncio.sleep(0.01)
+
+                    prov = get_remote_provider(remote_model)
+                    if hasattr(prov, "verify_draft_stream") and not s1.startswith("Error querying Groq model"):
+                        # Stream remote verify
+                        stream = prov.verify_draft_stream(req.prompt, s1, remote_model)
+                        chunk = {}
+                        for chunk in stream:
+                            delta = chunk.get("text", "")
+                            ans_accumulator.append(delta)
+                            yield f"data: {json.dumps({'event': 'content', 'text': delta})}\n\n"
+                            await asyncio.sleep(0.005)
+                        # final tokens
+                        p_tok += chunk.get("prompt_tokens", 0)
+                        c_tok += chunk.get("completion_tokens", 0)
+                    else:
+                        # fallback normal stream
+                        stream = prov.generate_stream(req.prompt, remote_model)
+                        chunk = {}
+                        for chunk in stream:
+                            delta = chunk.get("text", "")
+                            ans_accumulator.append(delta)
+                            yield f"data: {json.dumps({'event': 'content', 'text': delta})}\n\n"
+                            await asyncio.sleep(0.005)
+                        p_tok += chunk.get("prompt_tokens", 0)
+                        c_tok += chunk.get("completion_tokens", 0)
+                else:
+                    # Simulating local stream of trusted response to UI
+                    yield f"data: {json.dumps({'event': 'status', 'text': 'Streaming trusted local response...'})}\n\n"
+                    await asyncio.sleep(0.01)
+                    for word in s1.split(" "):
+                        ans_accumulator.append(word + " ")
+                        yield f"data: {json.dumps({'event': 'content', 'text': word + ' '})}\n\n"
+                        await asyncio.sleep(0.02)  # Simulate typing
         else:
             # Direct remote stream
             prompt_to_send = req.prompt
@@ -444,6 +513,55 @@ def get_supported_models():
         ]
     }
 
+def mask_api_key(key: Optional[str]) -> Optional[str]:
+    if not key:
+        return ""
+    # Check if the key looks like a placeholder already
+    if "placeholder" in key.lower() or "your_" in key.lower() or key.startswith("key_"):
+        return key
+    if len(key) <= 8:
+        return "********"
+    # Show first 4 characters and last 4 characters, with ... in between
+    return f"{key[:4]}...{key[-4:]}"
+
+def is_masked(key: Optional[str]) -> bool:
+    if not key:
+        return False
+    return "..." in key or "*" in key or "•" in key
+
+def update_env_file(updates: dict[str, str]):
+    env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+    if not os.path.exists(env_path):
+        return
+        
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            
+        updated_keys = set()
+        new_lines = []
+        
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                key, val = stripped.split("=", 1)
+                key = key.strip()
+                if key in updates:
+                    new_lines.append(f"{key}={updates[key]}\n")
+                    updated_keys.add(key)
+                    continue
+            new_lines.append(line)
+            
+        # Append any keys that weren't already in the file
+        for key, val in updates.items():
+            if key not in updated_keys:
+                new_lines.append(f"{key}={val}\n")
+                
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+    except Exception as e:
+        pass
+
 @router.get("/settings", response_model=SettingsPayload)
 def get_settings():
     return SettingsPayload(
@@ -452,12 +570,12 @@ def get_settings():
         default_threshold=settings.DEFAULT_CONSISTENCY_THRESHOLD,
         enable_cache=settings.ENABLE_CACHE,
         enable_prompt_compression=settings.ENABLE_PROMPT_COMPRESSION,
-        fireworks_api_key=settings.FIREWORKS_API_KEY,
-        openai_api_key=settings.OPENAI_API_KEY,
-        anthropic_api_key=settings.ANTHROPIC_API_KEY,
-        gemini_api_key=settings.GEMINI_API_KEY,
-        groq_api_key=settings.GROQ_API_KEY,
-        together_api_key=settings.TOGETHER_API_KEY
+        fireworks_api_key=mask_api_key(settings.FIREWORKS_API_KEY),
+        openai_api_key=mask_api_key(settings.OPENAI_API_KEY),
+        anthropic_api_key=mask_api_key(settings.ANTHROPIC_API_KEY),
+        gemini_api_key=mask_api_key(settings.GEMINI_API_KEY),
+        groq_api_key=mask_api_key(settings.GROQ_API_KEY),
+        together_api_key=mask_api_key(settings.TOGETHER_API_KEY)
     )
 
 @router.post("/settings")
@@ -469,17 +587,46 @@ def update_settings(payload: SettingsPayload):
     settings.ENABLE_CACHE = payload.enable_cache
     settings.ENABLE_PROMPT_COMPRESSION = payload.enable_prompt_compression
     
-    if payload.fireworks_api_key is not None:
-        settings.FIREWORKS_API_KEY = payload.fireworks_api_key
-    if payload.openai_api_key is not None:
-        settings.OPENAI_API_KEY = payload.openai_api_key
-    if payload.anthropic_api_key is not None:
-        settings.ANTHROPIC_API_KEY = payload.anthropic_api_key
-    if payload.gemini_api_key is not None:
-        settings.GEMINI_API_KEY = payload.gemini_api_key
-    if payload.groq_api_key is not None:
-        settings.GROQ_API_KEY = payload.groq_api_key
-    if payload.together_api_key is not None:
-        settings.TOGETHER_API_KEY = payload.together_api_key
+    env_updates = {
+        "ACTIVE_LOCAL_MODEL": payload.active_local_model,
+        "ACTIVE_REMOTE_MODEL": payload.active_remote_model,
+        "DEFAULT_CONSISTENCY_THRESHOLD": str(payload.default_threshold),
+        "ENABLE_CACHE": "true" if payload.enable_cache else "false",
+        "ENABLE_PROMPT_COMPRESSION": "true" if payload.enable_prompt_compression else "false",
+    }
 
-    return {"status": "success", "message": "Settings updated in memory."}
+    # Only update API keys if they are provided, not empty/null, and NOT masked
+    if payload.fireworks_api_key is not None:
+        if not is_masked(payload.fireworks_api_key):
+            settings.FIREWORKS_API_KEY = payload.fireworks_api_key
+            env_updates["FIREWORKS_API_KEY"] = payload.fireworks_api_key
+            
+    if payload.openai_api_key is not None:
+        if not is_masked(payload.openai_api_key):
+            settings.OPENAI_API_KEY = payload.openai_api_key
+            env_updates["OPENAI_API_KEY"] = payload.openai_api_key
+            
+    if payload.anthropic_api_key is not None:
+        if not is_masked(payload.anthropic_api_key):
+            settings.ANTHROPIC_API_KEY = payload.anthropic_api_key
+            env_updates["ANTHROPIC_API_KEY"] = payload.anthropic_api_key
+            
+    if payload.gemini_api_key is not None:
+        if not is_masked(payload.gemini_api_key):
+            settings.GEMINI_API_KEY = payload.gemini_api_key
+            env_updates["GEMINI_API_KEY"] = payload.gemini_api_key
+            
+    if payload.groq_api_key is not None:
+        if not is_masked(payload.groq_api_key):
+            settings.GROQ_API_KEY = payload.groq_api_key
+            env_updates["GROQ_API_KEY"] = payload.groq_api_key
+            
+    if payload.together_api_key is not None:
+        if not is_masked(payload.together_api_key):
+            settings.TOGETHER_API_KEY = payload.together_api_key
+            env_updates["TOGETHER_API_KEY"] = payload.together_api_key
+
+    # Save to .env file
+    update_env_file(env_updates)
+
+    return {"status": "success", "message": "Settings updated in memory and .env file."}

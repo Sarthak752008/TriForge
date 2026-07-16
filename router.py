@@ -83,6 +83,12 @@ def _classify(task_text: str) -> str:
     if re.search(r'\btranslat(e|ion)\b|\bin\s+(french|spanish|german|hindi|japanese|mandarin)\b', t):
         return "translation"
 
+    # ── Conversation / Greetings ──
+    if any(t.startswith(kw) for kw in [
+        "hello", "hi", "hey", "how are you", "what's up", "good morning", "good afternoon"
+    ]) and len(t.split()) < 6:
+        return "conversation"
+
     # ── Factual lookups ──
     if re.search(
         r'\bwhat\s+is\b|\bwho\s+(is|was|painted|invented|discovered|wrote|created)\b'
@@ -119,6 +125,14 @@ def route(task_text: str) -> tuple[str, str]:
             f"Routing to Fireworks Tier 1 (cheapest model) for reliable code synthesis."
         )
         return "remote_tier1", reason
+
+    # ── Conversation / Greetings ──
+    if category == "conversation":
+        reason = (
+            f"Conversation query ({word_count} words) — "
+            f"handled locally with zero Fireworks token cost."
+        )
+        return "local", reason
 
     # ── Simple factual / short math / code QA / translation → always local ──
     if category in ("factual", "simple_math", "translation"):

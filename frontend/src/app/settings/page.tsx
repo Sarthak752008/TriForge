@@ -11,7 +11,9 @@ import {
   Database,
   CheckCircle,
   HelpCircle,
-  ShieldCheck
+  ShieldCheck,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 interface SettingsData {
@@ -23,6 +25,9 @@ interface SettingsData {
   fireworks_api_key?: string;
   openai_api_key?: string;
   anthropic_api_key?: string;
+  gemini_api_key?: string;
+  groq_api_key?: string;
+  together_api_key?: string;
 }
 
 export default function SettingsPage() {
@@ -34,8 +39,24 @@ export default function SettingsPage() {
     enable_prompt_compression: false,
     fireworks_api_key: "",
     openai_api_key: "",
-    anthropic_api_key: ""
+    anthropic_api_key: "",
+    gemini_api_key: "",
+    groq_api_key: "",
+    together_api_key: ""
   });
+
+  const [showKeys, setShowKeys] = useState<{ [key: string]: boolean }>({
+    fireworks: false,
+    openai: false,
+    anthropic: false,
+    gemini: false,
+    groq: false,
+    together: false,
+  });
+
+  const toggleKeyVisibility = (key: string) => {
+    setShowKeys(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -123,36 +144,123 @@ export default function SettingsPage() {
           
           <div className="space-y-4 text-xs">
             <div>
+              <label className="block font-semibold text-zinc-400 mb-1.5 uppercase">Groq API Key (Optional)</label>
+              <div className="relative">
+                <input 
+                  type={showKeys.groq ? "text" : "password"} 
+                  value={formData.groq_api_key || ""} 
+                  onChange={(e) => setFormData({ ...formData, groq_api_key: e.target.value })}
+                  placeholder="Paste your Groq key here (starts with gsk_)..."
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 pr-10 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleKeyVisibility("groq")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 focus:outline-none"
+                >
+                  {showKeys.groq ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
               <label className="block font-semibold text-zinc-400 mb-1.5 uppercase">Fireworks AI API Key</label>
-              <input 
-                type="password" 
-                value={formData.fireworks_api_key || ""} 
-                onChange={(e) => setFormData({ ...formData, fireworks_api_key: e.target.value })}
-                placeholder="Paste your fireworks key here (starts with fw_)..."
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
-              />
+              <div className="relative">
+                <input 
+                  type={showKeys.fireworks ? "text" : "password"} 
+                  value={formData.fireworks_api_key || ""} 
+                  onChange={(e) => setFormData({ ...formData, fireworks_api_key: e.target.value })}
+                  placeholder="Paste your fireworks key here (starts with fw_)..."
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 pr-10 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleKeyVisibility("fireworks")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 focus:outline-none"
+                >
+                  {showKeys.fireworks ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             <div>
               <label className="block font-semibold text-zinc-400 mb-1.5 uppercase">OpenAI API Key (Optional)</label>
-              <input 
-                type="password" 
-                value={formData.openai_api_key || ""} 
-                onChange={(e) => setFormData({ ...formData, openai_api_key: e.target.value })}
-                placeholder="Paste your openai key here (starts with sk-)..."
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
-              />
+              <div className="relative">
+                <input 
+                  type={showKeys.openai ? "text" : "password"} 
+                  value={formData.openai_api_key || ""} 
+                  onChange={(e) => setFormData({ ...formData, openai_api_key: e.target.value })}
+                  placeholder="Paste your openai key here (starts with sk-)..."
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 pr-10 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleKeyVisibility("openai")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 focus:outline-none"
+                >
+                  {showKeys.openai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             <div>
               <label className="block font-semibold text-zinc-400 mb-1.5 uppercase">Anthropic API Key (Optional)</label>
-              <input 
-                type="password" 
-                value={formData.anthropic_api_key || ""} 
-                onChange={(e) => setFormData({ ...formData, anthropic_api_key: e.target.value })}
-                placeholder="Paste your anthropic key here (starts with sk-ant-)..."
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
-              />
+              <div className="relative">
+                <input 
+                  type={showKeys.anthropic ? "text" : "password"} 
+                  value={formData.anthropic_api_key || ""} 
+                  onChange={(e) => setFormData({ ...formData, anthropic_api_key: e.target.value })}
+                  placeholder="Paste your anthropic key here (starts with sk-ant-)..."
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 pr-10 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleKeyVisibility("anthropic")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 focus:outline-none"
+                >
+                  {showKeys.anthropic ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-zinc-400 mb-1.5 uppercase">Gemini API Key (Optional)</label>
+              <div className="relative">
+                <input 
+                  type={showKeys.gemini ? "text" : "password"} 
+                  value={formData.gemini_api_key || ""} 
+                  onChange={(e) => setFormData({ ...formData, gemini_api_key: e.target.value })}
+                  placeholder="Paste your Gemini API key here..."
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 pr-10 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleKeyVisibility("gemini")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 focus:outline-none"
+                >
+                  {showKeys.gemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-zinc-400 mb-1.5 uppercase">Together AI API Key (Optional)</label>
+              <div className="relative">
+                <input 
+                  type={showKeys.together ? "text" : "password"} 
+                  value={formData.together_api_key || ""} 
+                  onChange={(e) => setFormData({ ...formData, together_api_key: e.target.value })}
+                  placeholder="Paste your Together API key here..."
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 pr-10 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleKeyVisibility("together")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 focus:outline-none"
+                >
+                  {showKeys.together ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
           </div>
         </div>

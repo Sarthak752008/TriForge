@@ -1,4 +1,4 @@
-# TriForge: Production-Grade Hybrid Token-Efficient Routing Agent
+# TriForge: Production-Grade Hybrid Token-Efficient AI Agent
 
 **TriForge** is a production-grade, full-stack hybrid LLM routing system built for the AMD Developer Hackathon. It dynamically routes user queries between a **free, local model** (running locally via Ollama) and a **pluggable remote model** (such as Fireworks AI, OpenAI, or Anthropic). 
 

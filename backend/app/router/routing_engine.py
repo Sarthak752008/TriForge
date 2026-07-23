@@ -62,30 +62,51 @@ class RoutingEngine:
         Decides model routing.
         Returns:
             Tuple[str, str, Dict[str, Any]]: (route_name, reason, estimates)
+
+        Routing strategy (token-minimisation priority):
+          - LOCAL  : handles factual QA, math, reasoning, short summarization,
+                     translation, extraction, conversation, general_qa
+          - REMOTE : only for code generation tasks or very long prompts (>75 words)
         """
         category = self.classifier.classify(prompt)
         estimates = self.estimate_metrics(prompt, category)
         word_count = estimates["word_count"]
 
-        # 1. Immediate Remote Escalation for Coding/Math/Reasoning
-        if category in ["coding", "math", "reasoning"]:
+        # 1. Code generation → always remote (local 8B models are unreliable for synthesis)
+        #    Note: simple conceptual code QA ("what does X do?") is routed to local.
+        if category == "coding":
+            code_gen_keywords = [
+                "write", "create", "generate", "build", "implement", "develop", "make",
+                "fix", "debug", "refactor", "optimise", "optimize", "add", "update", "script",
+                "program", "function", "class", "algorithm", "code"
+            ]
+            if any(kw in prompt.lower() for kw in code_gen_keywords):
+                reason = (
+                    f"Query classified as 'CODING' with code-generation/debugging intent. "
+                    f"Routed to remote model for reliable code synthesis."
+                )
+                return "remote", reason, estimates
+            else:
+                reason = (
+                    f"Query classified as 'CODING' but appears to be conceptual/informational code QA. "
+                    f"Routing to local model to conserve remote tokens."
+                )
+                return "local", reason, estimates
+
+        # 2. Very long prompts → remote (avoids slow local inference & context overflow)
+        if word_count > 75:
             reason = (
-                f"Query classified as '{category.upper()}' (high-complexity reasoning). "
-                f"Routed directly to remote model for maximum capability."
+                f"Prompt has {word_count} words (exceeds local threshold of 75 words). "
+                f"Routed to remote model to handle long context reliably."
             )
             return "remote", reason, estimates
 
-        # 2. Length-based check
-        if word_count > 25:
-            reason = (
-                f"Prompt has {word_count} words (exceeds local threshold of 25 words). "
-                f"Routed to remote model to prevent high latency."
-            )
-            return "remote", reason, estimates
-
-        # 3. Default to local for simple tasks
+        # 3. All other categories (math, reasoning, summarization, translation,
+        #    extraction, conversation, general_qa) → try local first.
+        #    The consistency checker in the chat endpoint will escalate to remote
+        #    automatically if similarity falls below the configured threshold.
         reason = (
-            f"Prompt is short ({word_count} words) and task type is '{category}' (low-to-medium complexity). "
+            f"Prompt is {word_count} words and task type is '{category}' (low-to-medium complexity). "
             f"Routing to local model to conserve remote tokens."
         )
         return "local", reason, estimates

@@ -1,11 +1,11 @@
 import re
 from typing import Dict, Any
-from app.providers.local_ollama import LocalOllamaProvider
+from app.providers.groq_provider import GroqProvider
 from app.config import settings
 
 class SemanticClassifier:
-    def __init__(self, ollama_provider: LocalOllamaProvider = None):
-        self.ollama = ollama_provider or LocalOllamaProvider()
+    def __init__(self, groq_provider: GroqProvider = None):
+        self.groq = groq_provider or GroqProvider()
         self.categories = [
             "coding", "math", "reasoning", "summarization", 
             "translation", "extraction", "conversation", 
@@ -18,21 +18,36 @@ class SemanticClassifier:
         Fast regex/keyword heuristics to classify obvious prompts instantly.
         """
         prompt_lower = prompt.lower()
-        
-        # Coding heuristics
-        if any(kw in prompt_lower for kw in [
-            "def ", "function", "class ", "import ", "const ", "console.log", 
-            "javascript", "python", "html", "css", "sql", "git", "regex", "code", "bug"
-        ]):
+
+        # Coding heuristics — only flag when there is clear CODE GENERATION or DEBUGGING intent.
+        # Broad words like "code", "python", "html", "css", "git" alone are NOT enough;
+        # we need an imperative verb paired with a code artifact to avoid false positives.
+        code_generation_verbs = [
+            "write", "create", "generate", "build", "implement", "develop", "make",
+            "fix", "debug", "refactor", "optimise", "optimize", "add", "update",
+        ]
+        code_artifact_nouns = [
+            "function", "class", "script", "program", "code", "snippet", "module",
+            "api", "endpoint", "algorithm", "loop", "method", "query", "regex",
+            "dockerfile", "dockerfile", "unit test", "test case",
+        ]
+        for verb in code_generation_verbs:
+            if verb in prompt_lower:
+                for noun in code_artifact_nouns:
+                    if noun in prompt_lower:
+                        return "coding"
+
+        # Also flag obvious inline syntax that only appears in code
+        if any(kw in prompt_lower for kw in ["def ", "console.log(", "import ", "#include", "SELECT ", "<?php"]):
             return "coding"
-            
+
         # Math heuristics
         if any(kw in prompt_lower for kw in [
-            "solve for", "equation", "integral", "derivative", "multiply", "divide", 
+            "solve for", "equation", "integral", "derivative", "multiply", "divide",
             "fraction", "algebra", "calculus", "geometry", "theorem"
         ]) or re.search(r'\d+\s*[\+\-\*\/]\s*\d+', prompt_lower):
             return "math"
-            
+
         # Summarization
         if any(kw in prompt_lower for kw in ["summarize", "summary", "tl;dr", "tldr", "condense", "gist of"]):
             return "summarization"
@@ -73,7 +88,7 @@ class SemanticClassifier:
             self._cache[cleaned_prompt] = heuristic_category
             return heuristic_category
 
-        # 2. Call local LLM for semantic classification
+        # 2. Call Groq (free-tier fast LLM) for semantic classification
         system_prompt = (
             "You are a fast intent classifier. Categorize the user prompt into exactly one of these lowercase categories:\n"
             "- coding\n"
@@ -92,11 +107,11 @@ class SemanticClassifier:
         full_classification_prompt = f"{system_prompt}\n\nPrompt: {prompt}\nCategory:"
         
         try:
-            # Call Ollama with low temperature and max token limit to keep it fast
-            category, _, _ = self.ollama.generate(
+            # Call Groq with low temperature and max token limit to keep it fast
+            category, _, _ = self.groq.generate(
                 prompt=full_classification_prompt, 
                 model=settings.ACTIVE_LOCAL_MODEL,
-                options={"temperature": 0.0, "num_predict": 10}
+                options={"temperature": 0.0}
             )
             cleaned = category.strip().lower().replace(".", "").replace('"', '').replace("'", "")
             

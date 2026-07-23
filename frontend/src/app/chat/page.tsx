@@ -61,6 +61,30 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Load saved messages from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("triforge_chat_messages");
+    if (saved) {
+      try {
+        setMessages(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse saved messages", e);
+      }
+    }
+  }, []);
+
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem("triforge_chat_messages", JSON.stringify(messages));
+  }, [messages]);
+
+  // Clear chat session history
+  const handleClearChat = () => {
+    setMessages([]);
+    localStorage.removeItem("triforge_chat_messages");
+    setSelectedMessage(null);
+  };
+
   useEffect(() => {
     // Fetch default settings and models list from backend
     const initialize = async () => {
@@ -271,6 +295,14 @@ export default function ChatPage() {
             <h2 className="font-bold text-white tracking-wide">TriForge Router Session</h2>
           </div>
           <div className="flex gap-2">
+            {messages.length > 0 && (
+              <button 
+                onClick={handleClearChat}
+                className="bg-zinc-850 hover:bg-red-950/45 hover:text-red-400 border border-zinc-700 hover:border-red-500/20 text-zinc-300 font-semibold text-xs px-3.5 py-2 rounded-lg transition-all duration-200 active:scale-95"
+              >
+                Clear Chat
+              </button>
+            )}
             <button 
               onClick={() => setShowOptions(!showOptions)}
               className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 font-semibold text-xs px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 active:scale-95"

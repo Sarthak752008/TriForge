@@ -22,7 +22,7 @@ class LocalOllamaProvider(BaseProvider):
         }
 
         try:
-            response = requests.post(url, json=payload, timeout=30)
+            response = requests.post(url, json=payload, timeout=3)
             response.raise_for_status()
             data = response.json()
             content = data.get("message", {}).get("content", "")

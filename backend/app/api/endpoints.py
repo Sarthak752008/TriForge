@@ -183,45 +183,50 @@ def chat_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
     escalated = False
     draft = None
 
+    category = estimates.get("category", "general_qa")
+
     if route_name == "local":
-        category = estimates["category"]
-        if category == "conversation":
-            s1, total_p, total_c = consistency_checker.local_provider.generate(req.prompt, local_model, {"temperature": 0.7})
-            ans = s1
+        # Bypass self-consistency check for low-risk or subjective tasks (saves token cost & avoids false-positives)
+        bypass_consistency = category in ["conversation", "translation", "creative_writing", "summarization", "extraction"]
+        
+        if bypass_consistency:
+            s1, total_p, total_c = groq_local.generate(req.prompt, local_model)
+            sim = 1.0
             p_tok += total_p
             c_tok += total_c
             confidence = 1.0
+            draft = s1
         else:
-            # Run self-consistency
+            # Run self-consistency for high-stakes/factual reasoning tasks
             sim, s1, s2, total_p, total_c = consistency_checker.check_consistency(req.prompt, local_model, threshold)
             p_tok += total_p
             c_tok += total_c
             confidence = sim
             draft = s1
 
-            # Run hallucination check
-            flagged_info = hallucination_detector.check_hallucination_signals(s1)
+        # Run hallucination check
+        flagged_info = hallucination_detector.check_hallucination_signals(s1)
 
-            if sim < threshold or flagged_info["flagged"]:
-                escalated = True
-                final_route = "LOCAL -> ESCALATED TO REMOTE"
-                route_reason = (
-                    f"Escalated because consistency similarity ({sim:.2f}) was below threshold ({threshold:.2f}) "
-                    f"or hedging/hallucination flags were raised: {flagged_info['reasons']}"
-                )
-                
-                # Verify Draft Escalation
-                prov = get_remote_provider(remote_model)
-                if hasattr(prov, "verify_draft") and not s1.startswith("Error querying Groq model"):
-                    ans, r_p, r_c = prov.verify_draft(req.prompt, s1, remote_model)
-                else:
-                    # If provider doesn't support verify-draft or draft is an error, run normal remote fallback
-                    ans, r_p, r_c = prov.generate(req.prompt, remote_model)
-                p_tok += r_p
-                c_tok += r_c
+        if sim < threshold or flagged_info["flagged"]:
+            escalated = True
+            final_route = "LOCAL -> ESCALATED TO REMOTE"
+            route_reason = (
+                f"Escalated because consistency similarity ({sim:.2f}) was below threshold ({threshold:.2f}) "
+                f"or hedging/hallucination flags were raised: {flagged_info['reasons']}"
+            )
+            
+            # Verify Draft Escalation
+            prov = get_remote_provider(remote_model)
+            if hasattr(prov, "verify_draft") and not s1.startswith("Error querying Groq model"):
+                ans, r_p, r_c = prov.verify_draft(req.prompt, s1, remote_model)
             else:
-                # Trusted local response
-                ans = s1
+                # If provider doesn't support verify-draft or draft is an error, run normal remote fallback
+                ans, r_p, r_c = prov.generate(req.prompt, remote_model)
+            p_tok += r_p
+            c_tok += r_c
+        else:
+            # Trusted local response
+            ans = s1
     else:
         # Route Remote directly
         prompt_to_send = req.prompt
@@ -312,73 +317,71 @@ async def chat_stream_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
         yield f"data: {json.dumps({'event': 'routing', 'route': route_name, 'reason': reason})}\n\n"
         await asyncio.sleep(0.01)
 
+        category = estimates.get("category", "general_qa")
+
         if route_name == "local":
-            category = estimates["category"]
-            if category == "conversation":
-                yield f"data: {json.dumps({'event': 'status', 'text': 'Streaming local response...'})}\n\n"
-                await asyncio.sleep(0.01)
-                prov = consistency_checker.local_provider
-                stream = prov.generate_stream(req.prompt, local_model, {"temperature": 0.7})
-                chunk = {}
-                for chunk in stream:
-                    delta = chunk.get("text", "")
-                    ans_accumulator.append(delta)
-                    yield f"data: {json.dumps({'event': 'content', 'text': delta})}\n\n"
-                    await asyncio.sleep(0.005)
-                p_tok += chunk.get("prompt_tokens", 0)
-                c_tok += chunk.get("completion_tokens", 0)
+            # Bypass self-consistency check for low-risk or subjective tasks (saves token cost & avoids false-positives)
+            bypass_consistency = category in ["conversation", "translation", "creative_writing", "summarization", "extraction"]
+            
+            if bypass_consistency:
+                s1, total_p, total_c = groq_local.generate(req.prompt, local_model)
+                sim = 1.0
+                p_tok += total_p
+                c_tok += total_c
+                draft_text = s1
+                confidence = 1.0
             else:
-                # Run Self-Consistency Check (Synchronously as we need verification)
+                # Run self-consistency check for high-stakes/factual reasoning tasks
                 sim, s1, s2, total_p, total_c = consistency_checker.check_consistency(req.prompt, local_model, threshold)
                 p_tok += total_p
                 c_tok += total_c
                 draft_text = s1
                 confidence = sim
 
-                flagged_info = hallucination_detector.check_hallucination_signals(s1)
+            flagged_info = hallucination_detector.check_hallucination_signals(s1)
 
-                if sim < threshold or flagged_info["flagged"]:
-                    escalated = True
-                    final_route = "LOCAL -> ESCALATED TO REMOTE"
-                    route_reason = (
-                        f"Escalated: Similarity ({sim:.2f}) < threshold ({threshold:.2f}) "
-                        f"or flagged: {flagged_info['reasons']}"
-                    )
-                    yield f"data: {json.dumps({'event': 'escalation', 'reason': route_reason, 'draft': s1})}\n\n"
-                    await asyncio.sleep(0.01)
+            if sim < threshold or flagged_info["flagged"]:
+                escalated = True
+                final_route = "LOCAL -> ESCALATED TO REMOTE"
+                route_reason = (
+                    f"Escalated: Similarity ({sim:.2f}) < threshold ({threshold:.2f}) "
+                    f"or flagged: {flagged_info['reasons']}"
+                )
+                yield f"data: {json.dumps({'event': 'escalation', 'reason': route_reason, 'draft': s1})}\n\n"
+                await asyncio.sleep(0.01)
 
-                    prov = get_remote_provider(remote_model)
-                    if hasattr(prov, "verify_draft_stream") and not s1.startswith("Error querying Groq model"):
-                        # Stream remote verify
-                        stream = prov.verify_draft_stream(req.prompt, s1, remote_model)
-                        chunk = {}
-                        for chunk in stream:
-                            delta = chunk.get("text", "")
-                            ans_accumulator.append(delta)
-                            yield f"data: {json.dumps({'event': 'content', 'text': delta})}\n\n"
-                            await asyncio.sleep(0.005)
-                        # final tokens
-                        p_tok += chunk.get("prompt_tokens", 0)
-                        c_tok += chunk.get("completion_tokens", 0)
-                    else:
-                        # fallback normal stream
-                        stream = prov.generate_stream(req.prompt, remote_model)
-                        chunk = {}
-                        for chunk in stream:
-                            delta = chunk.get("text", "")
-                            ans_accumulator.append(delta)
-                            yield f"data: {json.dumps({'event': 'content', 'text': delta})}\n\n"
-                            await asyncio.sleep(0.005)
-                        p_tok += chunk.get("prompt_tokens", 0)
-                        c_tok += chunk.get("completion_tokens", 0)
+                prov = get_remote_provider(remote_model)
+                if hasattr(prov, "verify_draft_stream") and not s1.startswith("Error querying Groq model"):
+                    # Stream remote verify
+                    stream = prov.verify_draft_stream(req.prompt, s1, remote_model)
+                    chunk = {}
+                    for chunk in stream:
+                        delta = chunk.get("text", "")
+                        ans_accumulator.append(delta)
+                        yield f"data: {json.dumps({'event': 'content', 'text': delta})}\n\n"
+                        await asyncio.sleep(0.005)
+                    # final tokens
+                    p_tok += chunk.get("prompt_tokens", 0)
+                    c_tok += chunk.get("completion_tokens", 0)
                 else:
-                    # Simulating local stream of trusted response to UI
-                    yield f"data: {json.dumps({'event': 'status', 'text': 'Streaming trusted local response...'})}\n\n"
-                    await asyncio.sleep(0.01)
-                    for word in s1.split(" "):
-                        ans_accumulator.append(word + " ")
-                        yield f"data: {json.dumps({'event': 'content', 'text': word + ' '})}\n\n"
-                        await asyncio.sleep(0.02)  # Simulate typing
+                    # fallback normal stream
+                    stream = prov.generate_stream(req.prompt, remote_model)
+                    chunk = {}
+                    for chunk in stream:
+                        delta = chunk.get("text", "")
+                        ans_accumulator.append(delta)
+                        yield f"data: {json.dumps({'event': 'content', 'text': delta})}\n\n"
+                        await asyncio.sleep(0.005)
+                    p_tok += chunk.get("prompt_tokens", 0)
+                    c_tok += chunk.get("completion_tokens", 0)
+            else:
+                # Simulating local stream of trusted response to UI
+                yield f"data: {json.dumps({'event': 'status', 'text': 'Streaming trusted local response...'})}\n\n"
+                await asyncio.sleep(0.01)
+                for word in s1.split(" "):
+                    ans_accumulator.append(word + " ")
+                    yield f"data: {json.dumps({'event': 'content', 'text': word + ' '})}\n\n"
+                    await asyncio.sleep(0.02)  # Simulate typing
         else:
             # Direct remote stream
             prompt_to_send = req.prompt

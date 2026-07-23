@@ -30,11 +30,12 @@ class BaseProvider(ABC):
         """
         verification_prompt = (
             f"You are an expert verifier. Review the draft answer for the given task.\n"
-            f"If the draft is correct and complete, confirm it. If it is incorrect, incomplete, "
-            f"or has errors, correct it.\n\n"
+            f"If the draft is correct and complete, repeat the draft answer exactly, with no additional commentary, preamble, or meta-confirmation.\n"
+            f"If the draft is incorrect, incomplete, or has errors, output the corrected/completed answer only.\n"
+            f"Do not include any conversational filler, meta-talk (like 'Confirmed', 'Here is the correction'), or explanations.\n\n"
             f"Task: {prompt}\n"
             f"Draft Answer: {draft}\n\n"
-            f"Response (be concise, verify/correct the draft):"
+            f"Final Answer:"
         )
         return self.generate(verification_prompt, model, options)
 
@@ -44,10 +45,11 @@ class BaseProvider(ABC):
         """
         verification_prompt = (
             f"You are an expert verifier. Review the draft answer for the given task.\n"
-            f"If the draft is correct and complete, confirm it. If it is incorrect, incomplete, "
-            f"or has errors, correct it.\n\n"
+            f"If the draft is correct and complete, repeat the draft answer exactly, with no additional commentary, preamble, or meta-confirmation.\n"
+            f"If the draft is incorrect, incomplete, or has errors, output the corrected/completed answer only.\n"
+            f"Do not include any conversational filler, meta-talk (like 'Confirmed', 'Here is the correction'), or explanations.\n\n"
             f"Task: {prompt}\n"
             f"Draft Answer: {draft}\n\n"
-            f"Response (be concise, verify/correct the draft):"
+            f"Final Answer:"
         )
         return self.generate_stream(verification_prompt, model, options)

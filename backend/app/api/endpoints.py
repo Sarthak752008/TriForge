@@ -517,20 +517,16 @@ def get_supported_models():
     }
 
 def mask_api_key(key: Optional[str]) -> Optional[str]:
-    if not key:
+    if not key or key.strip() == "" or "placeholder" in key.lower() or "your_" in key.lower():
         return ""
-    # Check if the key looks like a placeholder already
-    if "placeholder" in key.lower() or "your_" in key.lower() or key.startswith("key_"):
-        return key
-    if len(key) <= 8:
-        return "********"
-    # Show first 4 characters and last 4 characters, with ... in between
-    return f"{key[:4]}...{key[-4:]}"
+    # Fully mask the key for maximum security — never leak key prefixes, suffixes, or raw keys to the web UI
+    return "••••••••"
 
 def is_masked(key: Optional[str]) -> bool:
     if not key:
         return False
-    return "..." in key or "*" in key or "•" in key
+    key_str = key.strip()
+    return "..." in key_str or "*" in key_str or "•" in key_str or "placeholder" in key_str.lower() or "your_" in key_str.lower()
 
 def update_env_file(updates: dict[str, str]):
     env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))

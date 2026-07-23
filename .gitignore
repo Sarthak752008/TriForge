@@ -14,3 +14,7 @@ env/
 .vscode/
 .idea/
 .agents/
+
+# SQLite WAL files
+*.db-wal
+*.db-shm

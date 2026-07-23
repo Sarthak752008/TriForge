@@ -38,6 +38,9 @@ interface AnalyticsData {
   estimated_savings_usd: number;
   cache_hit_rate: number;
   average_latency_ms: number;
+  energy_saved_kwh?: number;
+  co2_saved_kg?: number;
+  phone_charges_saved?: number;
   daily_stats: DailyStat[];
 }
 
@@ -205,6 +208,55 @@ export default function Dashboard() {
               <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Cache Hit Rate</p>
               <h3 className="text-3xl font-extrabold text-white mt-2">{cache_hit_rate.toFixed(1)}%</h3>
               <p className="text-xs text-zinc-500 mt-2">Prompt answers loaded instantly</p>
+            </div>
+          </div>
+
+          {/* Real-Time Eco & Energy Impact Widget */}
+          <div className="bg-gradient-to-br from-emerald-950/50 via-zinc-900 to-teal-950/30 border border-emerald-500/30 rounded-xl p-6 shadow-xl relative overflow-hidden group">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-900/40 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-emerald-500/20 text-emerald-400 p-2.5 rounded-lg border border-emerald-500/30">
+                  <Zap className="w-5 h-5 text-emerald-400 fill-current" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base tracking-wide flex items-center gap-2">
+                    Real-Time Green AI & Energy Impact
+                  </h3>
+                  <p className="text-xs text-emerald-400/80 mt-0.5">
+                    Local hardware execution footprint vs 300W Cloud Datacenter H100 GPU clusters
+                  </p>
+                </div>
+              </div>
+              <span className="self-start sm:self-auto text-[10px] font-extrabold text-emerald-400 bg-emerald-950/80 border border-emerald-500/30 px-3 py-1.5 rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                🌱 Eco-Efficient Execution
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-5">
+              <div className="bg-zinc-950/60 border border-emerald-900/40 p-4 rounded-xl relative overflow-hidden">
+                <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Carbon Footprint Avoided</p>
+                <h4 className="text-2xl font-extrabold text-emerald-400 mt-1">
+                  {(data.co2_saved_kg ?? ((tokens_saved_local / 1000) * 0.00135)).toFixed(3)} <span className="text-sm font-semibold text-zinc-400">kg CO₂</span>
+                </h4>
+                <p className="text-[10px] text-zinc-500 mt-1">Grid emissions offset from cloud cooling & data transmission</p>
+              </div>
+
+              <div className="bg-zinc-950/60 border border-emerald-900/40 p-4 rounded-xl relative overflow-hidden">
+                <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Energy Conserved</p>
+                <h4 className="text-2xl font-extrabold text-white mt-1">
+                  {(data.energy_saved_kwh ?? ((tokens_saved_local / 1000) * 0.0035)).toFixed(3)} <span className="text-sm font-semibold text-zinc-400">kWh</span>
+                </h4>
+                <p className="text-[10px] text-zinc-500 mt-1">Power saved by local NPU/GPU execution vs cloud GPUs</p>
+              </div>
+
+              <div className="bg-zinc-950/60 border border-emerald-900/40 p-4 rounded-xl relative overflow-hidden">
+                <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Equivalent Power Offset</p>
+                <h4 className="text-2xl font-extrabold text-amber-400 mt-1">
+                  ~{data.phone_charges_saved ?? Math.round(((tokens_saved_local / 1000) * 0.0035) * 80)} <span className="text-sm font-semibold text-zinc-400">Recharges</span>
+                </h4>
+                <p className="text-[10px] text-zinc-500 mt-1">Smartphone battery recharges equivalent saved</p>
+              </div>
             </div>
           </div>
 

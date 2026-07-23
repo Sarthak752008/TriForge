@@ -23,6 +23,9 @@ class AnalyticsEngine:
                 "estimated_savings_usd": 0.0,
                 "cache_hit_rate": 0.0,
                 "average_latency_ms": 0.0,
+                "energy_saved_kwh": 0.0,
+                "co2_saved_kg": 0.0,
+                "phone_charges_saved": 0,
                 "daily_stats": []
             }
 
@@ -81,6 +84,12 @@ class AnalyticsEngine:
         # Cost and Savings Calculations
         est_cost = r_spent * self.remote_cost_per_token
         est_savings = tokens_saved * self.remote_cost_per_token
+
+        # Cloud 70B datacenter inference averages ~0.0035 kWh per 1k tokens (including server cooling & PUE) vs ~0.00015 kWh local NPU/GPU
+        # Grid carbon intensity average ~0.385 kg CO2 per kWh
+        energy_saved_kwh = (tokens_saved / 1000.0) * 0.0035
+        co2_saved_kg = energy_saved_kwh * 0.385
+        phone_charges_saved = int(energy_saved_kwh * 80)
 
         avg_latency = (totals.latency or 0) / total if totals else 0.0
 
@@ -166,6 +175,9 @@ class AnalyticsEngine:
             "estimated_savings_usd": round(est_savings, 6),
             "cache_hit_rate": round(cache_hit_rate, 2),
             "average_latency_ms": round(avg_latency, 2),
+            "energy_saved_kwh": round(energy_saved_kwh, 4),
+            "co2_saved_kg": round(co2_saved_kg, 4),
+            "phone_charges_saved": phone_charges_saved,
             "daily_stats": daily_stats
         }
 

@@ -48,6 +48,9 @@ class AnalyticsSummary(BaseModel):
     estimated_savings_usd: float
     cache_hit_rate: float
     average_latency_ms: float
+    energy_saved_kwh: float = 0.0
+    co2_saved_kg: float = 0.0
+    phone_charges_saved: int = 0
     daily_stats: Optional[List[Dict[str, Any]]] = None
 
 class BenchmarkRunRequest(BaseModel):

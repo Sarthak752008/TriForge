@@ -1,20 +1,35 @@
-# TriForge: Production-Grade Hybrid Token-Efficient AI Agent
+# ⚡ TriForge: Production-Grade Hybrid LLM Router & Agent
 
-**TriForge** is a production-grade, full-stack hybrid LLM routing system built for the AMD Developer Hackathon. It dynamically routes user queries between a **free, local model** (running locally via Ollama) and a **pluggable remote model** (such as Fireworks AI, OpenAI, or Anthropic). 
+**TriForge** is a production-grade, token-efficient hybrid LLM routing agent built for the AMD Developer Hackathon. It dynamically orchestrates user queries between a **free/ultra-fast local model** (via Groq / Ollama local models) and a **remote model** (Fireworks AI, OpenAI, Anthropic, or Groq Llama 3.3 70B).
 
-By using advanced classification, caching, local self-consistency, and verify-draft verification loops, TriForge reduces API token spend by up to **80%** while preserving remote-grade response accuracy and quality.
+By combining intent-based semantic classification, selective consistency checking, verify-draft verification loops, and local cache layers, TriForge slashes API token costs by up to **80%** while preserving high-tier response accuracy.
 
 ---
 
-## 🏗️ Architecture & Core Components
+## 🚀 Key Features & Highlights
+
+- 🧠 **Smart Intent-Based Routing:** Automatically classifies query intent (`coding`, `math`, `reasoning`, `summarization`, `translation`, `extraction`, `conversation`, `creative_writing`, `general_qa`). 
+  - Conceptual coding QA (e.g. *"What is a Python list?"*) is routed locally to save tokens.
+  - Code generation and synthesis tasks route to high-capability remote models.
+- 🌱 **Real-Time Green AI & Energy Impact Tracker:** Live dashboard metrics tracking **Energy Conserved (kWh)**, **CO₂ Emissions Avoided (kg)**, and **Smartphone Battery Recharges Offset** from local hardware execution vs. 300W cloud datacenter GPUs.
+- 📄 **1-Click Hackathon Evaluation Report Export:** Export structured Markdown reports (`.md`) containing executive performance summaries, accuracy matrices, latency breakdowns, and eco metrics directly from the Benchmark Harness.
+- 🔒 **API Key Privacy Protection & Key Shield:** Server API keys are stored securely on the backend. Responses strictly mask keys as `••••••••`—never leaking prefixes, suffixes, or raw key bytes to browser clients.
+- 💬 **Chat Thread Persistence:** Chat history automatically persists in `localStorage` across page navigation (Dashboard, Analytics, Settings, Benchmarks) with a 1-click Clear Chat feature.
+- ⚡ **Verify-Draft Escalation Loop:** When local answers require verification, TriForge submits the local draft alongside the prompt to the remote verifier, instructing it to output only corrections—drastically cutting cloud completion token expenditure.
+- ⚡ **Selective Self-Consistency:** Subjective and conversational queries (greetings, translations, summaries) bypass double-sampling consistency loops, saving 50% token cost and preventing false-positive escalations.
+
+---
+
+## 🏗️ Architecture & System Flow
 
 ```
                  +---------------------------------------+
                  |          Next.js Client UI            |
-                 |      (Dashboard, Chat, Analytics)     |
+                 |  (Dashboard, Chat, Analytics, Settings|
+                 |      & Benchmark Harness Report)      |
                  +-------------------+-------------------+
                                      |
-                                     v HTTP (REST / Event-Stream)
+                                     v HTTP (REST / SSE Stream)
                  +-------------------+-------------------+
                  |        FastAPI Routing Backend        |
                  |  +---------------------------------+  |
@@ -31,8 +46,8 @@ By using advanced classification, caching, local self-consistency, and verify-dr
                  |         |                   |         |
                  |         v (Local)           v (Remote)|
                  |  +------+------+     +------+------+  |
-                 |  | Ollama Prov |     | Pluggable   |  |
-                 |  | (Qwen/Gemma)|     | Providers   |  |
+                 |  | Groq/Ollama |     | Pluggable   |  |
+                 |  | (8B / Local)|     | Providers   |  |
                  |  +------+------+     | (Fireworks/ |  |
                  |         |            | OpenAI/etc) |  |
                  |         |            +------+------+  |
@@ -49,48 +64,27 @@ By using advanced classification, caching, local self-consistency, and verify-dr
                  +---------------------------------------+
 ```
 
-### 1. Hybrid Routing Logic (routing_engine.py)
-The [RoutingEngine](file:///c:/Users/sarth/OneDrive/Desktop/TriForage/TriForge/backend/app/router/routing_engine.py) analyzes the query's complexity using three variables:
-- **Semantic Classification:** Categorizes query into `coding`, `math`, `reasoning`, `summarization`, `translation`, `extraction`, `conversation`, `creative_writing`, or `general_qa`. Coding, Math, and Reasoning are escalated immediately to remote models.
-- **Prompt Length:** Queries with **> 25 words** are escalated to remote models to prevent local model context degradation.
-- **Heuristic fallback:** Simple chitchat, factual queries, and translation are sent to the local model.
+---
 
-### 2. Local Self-Consistency Loop (consistency.py)
-If routed locally:
-- The prompt is sampled **twice** at temperature `0.7` using local Ollama.
-- A string similarity check is run. If the similarity is `< 0.8` (configurable), local coherence is low, and the query escalates.
+## 🛠️ Routing Strategy & Decision Engine
 
-### 3. Hedging & Uncertainty Scan (hallucination.py)
-If the consistency score is high, the output is scanned for uncertainty markers (e.g. *"I am not sure"*, *"As an AI"*). If found, the query escalates.
-
-### 4. Verify-Draft Escalation
-When local answers fail consistency or raise hedging flags, the system does **not** discard the local draft. It submits the draft alongside the original prompt to the remote verifier, instructing it to only edit or correct mistakes. This minimizes output tokens on the remote API.
+| Query Category | Intent / Length Filter | Route Selected | Rationale |
+|---|---|---|---|
+| **Conversation / Greeting** | `"hello"`, `"hi"`, etc. | **`LOCAL`** | Bypasses consistency checks; served zero-cost locally |
+| **Conceptual Code QA** | `"What is a Python list?"` | **`LOCAL`** | Informational programming QA served locally |
+| **Code Synthesis / Debug** | `"Write a python script..."` | **`REMOTE`** | High-complexity code writing requires 70B+ synthesis |
+| **Long Context** | `> 75 words` | **`REMOTE`** | Prevents local context overflow and latency degradation |
+| **Factual QA / Math** | Standard prompts | **`LOCAL → VERIFY`** | Evaluates local self-consistency; escalates to remote via verify-draft if similarity < 0.8 |
 
 ---
 
-## ⚡ Optimizations & Production Performance
+## ⚡ Production Performance Optimizations
 
-TriForge is optimized for production-grade throughput, latency, and resource footprint:
-
-### 1. Concurrent Local Sampling (50% Latency Reduction)
-- **Mechanism:** In the local self-consistency verification loop, both Ollama queries are executed concurrently using Python's `concurrent.futures.ThreadPoolExecutor` instead of sequentially.
-- **Impact:** Decreases self-consistency check latency by approximately **50%**, ensuring fast local responses.
-
-### 2. SQLite WAL-Mode & Normal Sync (I/O Optimization)
-- **Mechanism:** Registered custom connection listeners to configure SQLite connection pragmas. The database engine executes under **WAL (Write-Ahead Logging)** mode, with **synchronous=NORMAL** and cache size set to **64MB** (`PRAGMA cache_size=-64000`).
-- **Impact:** Drastically speeds up SQLAlchemy writes and page history loads by removing blocking fsync calls and supporting concurrent reads/writes.
-
-### 3. Consolidated Single-Commit Transactions
-- **Mechanism:** Database logs (Request and Response tables) are flush-linked (`db.flush()`) and committed to the database in a single unit of work (`db.commit()`), reducing database write overhead.
-
-### 4. Fast Exact-Match Short-Circuit
-- **Mechanism:** Before running the O(N^2) `difflib.SequenceMatcher` computation for self-consistency, an O(1) exact-match shortcut is executed. If responses are identical, similarity resolves to `1.0` instantly.
-
-### 5. In-Memory Intent & Prompt Compression Caching
-- **Mechanism:** Implemented LRU caches mapping:
-  - Cleaned prompts directly to their classified intent category.
-  - Long input prompts directly to their compressed forms.
-- **Impact:** Bypasses redundant heuristics, local zero-shot queries, and local prompt compression operations for identical context inputs.
+1. **Groq Acceleration:** Fast-path zero-shot intent classification via Groq's Llama 3.1 8B API with low connection timeouts.
+2. **Concurrent Local Sampling:** Parallel execution of self-consistency checks using Python `ThreadPoolExecutor`.
+3. **SQLite WAL-Mode:** Enabled Write-Ahead Logging (`PRAGMA journal_mode=WAL`) and 64MB cache size for high-throughput concurrent I/O.
+4. **Selective Consistency Bypass:** Low-risk categories (`conversation`, `translation`, `creative_writing`, `summarization`, `extraction`) bypass double-sampling.
+5. **Clean Verification Output:** Direct final answer verifier prompts to avoid conversational meta-chatter (*"Confirmed. The draft is correct..."*).
 
 ---
 
@@ -100,24 +94,25 @@ TriForge is optimized for production-grade throughput, latency, and resource foo
 TriForge/
 ├── backend/
 │   ├── app/
-│   │   ├── api/          # FastAPI routes (chat, settings, history, benchmarks)
-│   │   ├── router/       # Routing and metadata estimation logic
-│   │   ├── classifier/   # Intent and semantic classification engine
-│   │   ├── providers/    # Pluggable clients (Ollama, Fireworks, OpenAI, Anthropic)
-│   │   ├── database/     # SQLAlchemy models, session, and validation schemas
-│   │   ├── cache/        # SQLite key-value prompt hashing cache
-│   │   ├── analytics/    # Aggregations engine for costs, tokens, savings
-│   │   └── utils/        # Text compressors and system helpers
-│   ├── tests/            # pytest suite (cache, router, providers)
-│   ├── Dockerfile        # FastAPI Docker configuration
-│   └── requirements.txt  # Python requirements
+│   │   ├── api/          # FastAPI endpoints (chat, stream, settings, analytics, benchmarks)
+│   │   ├── router/       # Hybrid routing engine & metrics estimation
+│   │   ├── classifier/   # Intent heuristic & semantic classification engine
+│   │   ├── providers/    # Model providers (Groq, Ollama, Fireworks, OpenAI, Anthropic)
+│   │   ├── database/     # SQLAlchemy models, schemas, and session initialization
+│   │   ├── cache/        # Smart SQLite prompt cache
+│   │   ├── analytics/    # Analytics engine (costs, token metrics, eco/energy savings)
+│   │   └── evaluation/   # Self-consistency and hedging/hallucination checks
+│   ├── tests/            # pytest suite
+│   ├── Dockerfile        # FastAPI container configuration
+│   └── requirements.txt  # Dependencies
 ├── frontend/
 │   ├── src/
-│   │   ├── app/          # Next.js pages (dashboard, chat, benchmarks, settings)
-│   │   └── components/   # Shared components (Sidebar layout)
-│   ├── Dockerfile        # Next.js Docker configuration
-│   └── package.json      # Node dependencies
-├── docker-compose.yml    # Orchestrates frontend & backend services
+│   │   ├── app/          # Next.js pages (Dashboard, Chat, Analytics, Benchmarks, Settings)
+│   │   ├── components/   # UI components (Sidebar navigation)
+│   │   └── lib/          # API config helpers
+│   ├── Dockerfile        # Next.js container configuration
+│   └── package.json      # Dependencies
+├── docker-compose.yml    # Full-stack orchestrator
 └── README.md
 ```
 
@@ -125,46 +120,40 @@ TriForge/
 
 ## 🚀 Getting Started
 
-### 1. Local Prerequisites
-- **Ollama:** Install [Ollama](https://ollama.com/) and download the default local 3B model:
-  ```bash
-  ollama pull qwen2.5:3b-instruct
-  ```
-- **Python:** Version 3.11.x
-- **Node.js:** Version 20.x or above
+### Prerequisites
+- **Python:** 3.11+
+- **Node.js:** 20+
+- **Groq API Key (Free):** Get a free key at [console.groq.com](https://console.groq.com)
 
-### 2. Manual Development Setup
+### Quick Local Setup
 
-#### Start Backend:
-1. Navigate to `backend/` and install requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Create a `.env` in the project root:
-   ```text
-   FIREWORKS_API_KEY=your_fireworks_api_key_here
-   ```
-3. Run the FastAPI server:
-   ```bash
-   uvicorn app.main:app --reload --port 8000
-   ```
+#### 1. Setup Backend:
+```bash
+cd backend
+pip install -r requirements.txt
+```
+Copy `.env.example` to `.env` in the root directory and add your `GROQ_API_KEY`:
+```text
+GROQ_API_KEY=gsk_your_groq_api_key_here
+```
+Run FastAPI server:
+```bash
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
 
-#### Start Frontend:
-1. Navigate to `frontend/` and install dependencies:
-   ```bash
-   npm install
-   ```
-2. Run the Next.js development server:
-   ```bash
-   npm run dev
-   ```
-3. Open `http://localhost:3000` in your browser.
+#### 2. Setup Frontend:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
 ## 🐳 Running with Docker
 
-Build and run both services with a single command. The docker compose configuration automatically sets up internal gateway routing to connect with your host's Ollama instance.
+Build and launch both services using Docker Compose:
 
 ```bash
 docker compose up --build
@@ -173,10 +162,10 @@ docker compose up --build
 ---
 
 ## 🧪 Testing
-Run unit tests to verify database caching, provider configurations, and routing choices:
+
+Run pytest suite for backend router, caching, and provider checks:
 
 ```bash
-# Set PYTHONPATH to backend folder and run pytest
 $env:PYTHONPATH="backend"
 python -m pytest backend/tests/
 ```

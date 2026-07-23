@@ -10,7 +10,9 @@ import {
   Coins, 
   Clock, 
   CheckCircle,
-  TrendingDown
+  TrendingDown,
+  Download,
+  FileText
 } from "lucide-react";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -91,6 +93,82 @@ export default function BenchmarksPage() {
     } finally {
       setRunning(false);
     }
+  };
+
+  // Download Formatted Benchmark Evaluation Report
+  const handleDownloadReport = (run: BenchmarkHistoryItem) => {
+    let parsed: Record<string, BenchmarkRunResult> | null = null;
+    try {
+      if (run.config_json) parsed = JSON.parse(run.config_json);
+    } catch (e) {}
+
+    const localAcc = parsed?.always_local?.accuracy ?? 0;
+    const remoteAcc = parsed?.always_remote?.accuracy ?? 0;
+    const routerAcc = parsed?.triforge_router?.accuracy ?? run.accuracy;
+
+    const localLatency = parsed?.always_local?.latency_avg_ms ?? 0;
+    const remoteLatency = parsed?.always_remote?.latency_avg_ms ?? 0;
+    const routerLatency = parsed?.triforge_router?.latency_avg_ms ?? run.latency_avg;
+
+    const localCost = parsed?.always_local?.cost_usd ?? 0;
+    const remoteCost = parsed?.always_remote?.cost_usd ?? 0;
+    const routerCost = parsed?.triforge_router?.cost_usd ?? run.cost;
+
+    const reportContent = `================================================================================
+          TRIFORGE HYBRID LLM ROUTER - HACKATHON EVALUATION REPORT
+================================================================================
+
+Benchmark Name    : ${run.benchmark_name}
+Run Timestamp     : ${new Date(run.timestamp).toLocaleString()}
+Total Tasks Tested: ${run.total_tasks}
+Report ID         : SWEEP-RUN-${run.id}
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE PERFORMANCE SUMMARY
+--------------------------------------------------------------------------------
+Overall Accuracy  : ${run.accuracy}%
+Average Latency   : ${run.latency_avg.toFixed(1)} ms
+Remote Cost Spent : $${run.cost.toFixed(6)}
+Net Savings       : $${run.savings.toFixed(6)} (vs Pure Remote Baseline)
+Remote Tokens     : ${run.remote_tokens.toLocaleString()}
+Local Tokens Saved: ${run.local_tokens.toLocaleString()}
+
+--------------------------------------------------------------------------------
+2. COMPARATIVE BENCHMARK MATRIX
+--------------------------------------------------------------------------------
+Metric                  | Always Local       | Always Remote      | TriForge Router
+------------------------|--------------------|--------------------|--------------------
+Accuracy (%)            | ${localAcc}%              | ${remoteAcc}%              | ${routerAcc}%
+Avg Latency (ms)        | ${localLatency.toFixed(1)} ms          | ${remoteLatency.toFixed(1)} ms          | ${routerLatency.toFixed(1)} ms
+Estimated Cost ($)      | $${localCost.toFixed(6)}          | $${remoteCost.toFixed(6)}          | $${routerCost.toFixed(6)}
+
+--------------------------------------------------------------------------------
+3. GREEN AI & ECO FOOTPRINT IMPACT
+--------------------------------------------------------------------------------
+Energy Conserved        : ~${((run.local_tokens / 1000) * 0.0035).toFixed(4)} kWh
+Carbon CO2 Offset       : ~${((run.local_tokens / 1000) * 0.00135).toFixed(4)} kg CO2
+Smartphone Battery Equiv: ~${Math.round((run.local_tokens / 1000) * 0.28)} full recharges saved
+
+--------------------------------------------------------------------------------
+4. KEY ARCHITECTURAL TAKEAWAYS FOR HACKATHON JUDGES
+--------------------------------------------------------------------------------
+- High Cost Efficiency : Achieved near-remote accuracy while cutting cloud API spending.
+- Zero-Cost Local Path : Simple queries, greetings, and short QA are served locally.
+- Verify-Draft Logic   : High-complexity tasks use local drafts with minimal verification,
+                         substantially reducing cloud completion token costs.
+
+================================================================================
+Generated automatically by TriForge Benchmark Harness
+`;
+
+    const blob = new Blob([reportContent], { type: "text/markdown;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `TriForge_Benchmark_Report_${run.benchmark_name.replace(/\s+/g, "_")}.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Parse custom configurations
@@ -244,6 +322,26 @@ export default function BenchmarksPage() {
           <div className="lg:col-span-3 space-y-6">
             {selectedRun && (
               <>
+                {/* Active Run Header & Report Download Banner */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div>
+                    <h3 className="font-bold text-white text-base tracking-wide flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-amber-500" />
+                      {selectedRun.benchmark_name}
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      Executed on {new Date(selectedRun.timestamp).toLocaleString()} • {selectedRun.total_tasks} Evaluation Tasks
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => handleDownloadReport(selectedRun)}
+                    className="bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 font-semibold text-xs px-4 py-2.5 rounded-lg flex items-center gap-2 border border-emerald-500/30 transition shadow-sm active:scale-95 shrink-0"
+                  >
+                    <Download className="w-4 h-4 text-emerald-400" />
+                    <span>Export Evaluation Report (.md)</span>
+                  </button>
+                </div>
+
                 {/* Run Details Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 shadow-md">

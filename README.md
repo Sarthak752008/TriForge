@@ -12,7 +12,7 @@ By combining intent classification, 2-stage semantic vector caching, adaptive th
 
 ---
 
-Deployed Link - https://tri-forge.vercel.app/
+Deployed Link - https://tri-forge-olcq56mhc-sarthak-sharma.vercel.app/
 
 ## 🎯 Problem Statement
 
